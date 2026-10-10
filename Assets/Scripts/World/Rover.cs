@@ -97,10 +97,11 @@ namespace Mohakash
             next.y = World.HeightAt(next);
             transform.position = next;
 
-            var n = World.Terrain.terrainData.GetInterpolatedNormal(
-                (next.x - World.Terrain.transform.position.x) / MoonWorld.Size,
-                (next.z - World.Terrain.transform.position.z) / MoonWorld.Size);
-            var rot = Quaternion.FromToRotation(Vector3.up, n) * Quaternion.Euler(0, yaw, 0);
+            // Align to terrain normal via raycast
+            Vector3 terrainNormal = Vector3.up;
+            if (Physics.Raycast(next + Vector3.up * 5f, Vector3.down, out var normalHit, 20f))
+                terrainNormal = normalHit.normal;
+            var rot = Quaternion.FromToRotation(Vector3.up, terrainNormal) * Quaternion.Euler(0, yaw, 0);
             transform.rotation = Quaternion.Slerp(transform.rotation, rot, 8f * dt);
 
             // Expose for RoverAnimator
