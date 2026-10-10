@@ -182,13 +182,13 @@ namespace Mohakash
             var sunGo = new GameObject("Sun (low polar sun)");
             sunGo.transform.SetParent(transform);
             Sun = sunGo.AddComponent<Light>();
-            Sun.type = LightType.Directional;
-            Sun.color = new Color(1f, 0.97f, 0.90f);
-            Sun.intensity = 3.4f;
-            Sun.shadows = LightShadows.Soft;
-            Sun.shadowStrength = 1f;
+            Sun.type             = LightType.Directional;
+            Sun.color            = new Color(1f, 0.97f, 0.90f);
+            Sun.intensity        = 3.4f;
+            Sun.shadows          = LightShadows.Soft;
+            Sun.shadowStrength   = 1f;
             Sun.shadowNormalBias = 0.4f;
-            Sun.shadowBias = 0.02f;
+            Sun.shadowBias       = 0.02f;
             SetSun(1f);
 
             SunDisk = MakeDisk("Sun disk", "Materials/SunGlow", 22f);

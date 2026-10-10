@@ -88,6 +88,12 @@ namespace Mohakash
                     if (b.size.y > 0.01f)
                         model.transform.localScale = Vector3.one * (Height / b.size.y);
                 }
+                foreach (var r in model.GetComponentsInChildren<Renderer>())
+                {
+                    // Cast shadows so the astronaut projects a long moon shadow on the terrain
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                    r.receiveShadows    = true;
+                }
                 foreach (var t in model.GetComponentsInChildren<Transform>())
                     t.gameObject.layer = 2;
 
@@ -195,10 +201,10 @@ namespace Mohakash
             Vector3 horizontal = moveDir.normalized * (topSpeed * inputMag);
             cc.Move((horizontal + Vector3.up * velocity.y) * dt);
 
-            // Face the camera-relative move direction
+            // Face the camera-relative move direction – smooth turn speed
             if (moveDir.sqrMagnitude > 0.01f)
                 transform.rotation = Quaternion.Slerp(transform.rotation,
-                    Quaternion.LookRotation(moveDir), 10f * dt);
+                    Quaternion.LookRotation(moveDir), 8f * dt);
 
             // ── State transitions ──────────────────────────────────────────
             float horizSpeed = horizontal.magnitude;
