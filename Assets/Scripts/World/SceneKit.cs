@@ -39,7 +39,6 @@ namespace Mohakash
             // Bloom – subtle scatter halo around the sun disk and bright surfaces.
             // Scatter > 0 gives the soft URP "physically based" bloom look.
             var bloom = p.Add<Bloom>(true);
-            bloom.mode.Override(BloomMode.Luminance);
             bloom.intensity.Override(1.4f);
             bloom.threshold.Override(0.92f);
             bloom.scatter.Override(0.72f);
