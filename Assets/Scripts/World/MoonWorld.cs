@@ -129,19 +129,29 @@ namespace Mohakash
             filter.sharedMesh = mesh;
 
             var renderer = go.AddComponent<MeshRenderer>();
-            Material mat = Resources.Load<Material>("Materials/MoonRock");
-            if (mat == null)
+            Material mat;
+            var rockMat = Resources.Load<Material>("Materials/MoonRock");
+            if (rockMat != null)
             {
-                Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-                if (shader == null) shader = Shader.Find("Standard");
-                mat = new Material(shader != null ? shader : Shader.Find("Hidden/InternalErrorShader"));
-                mat.color = new Color(0.38f, 0.37f, 0.35f);
+                // Clone the MoonRock material (guaranteed URP Lit shader) and adjust for regolith.
+                // URP Lit uses _BaseColor, not .color / _Color.
+                mat = new Material(rockMat);
+                var regolithColor = new Color(0.80f, 0.78f, 0.74f, 1f);
+                mat.SetColor("_BaseColor", regolithColor);
+                mat.SetFloat("_Smoothness", 0.02f);
+                mat.SetFloat("_Metallic", 0f);
+                // Apply regolith texture if available (URP Lit uses _BaseMap, not mainTexture)
+                var regTex = Resources.Load<Texture2D>("Materials/RegolithTex");
+                if (regTex != null) mat.SetTexture("_BaseMap", regTex);
             }
             else
             {
-                mat = new Material(mat);
-                mat.color = new Color(0.38f, 0.37f, 0.35f);
-                mat.SetFloat("_Smoothness", 0.03f);
+                // Last resort: create a plain material with whatever URP shader is available
+                var shader = Shader.Find("Universal Render Pipeline/Lit")
+                          ?? Shader.Find("Standard")
+                          ?? Shader.Find("Hidden/InternalErrorShader");
+                mat = new Material(shader);
+                mat.SetColor("_BaseColor", new Color(0.42f, 0.40f, 0.37f, 1f));
             }
             renderer.sharedMaterial = mat;
 
@@ -198,10 +208,11 @@ namespace Mohakash
             var earthMat = Resources.Load<Material>("Materials/Earth");
             if (earthMat == null)
             {
-                Shader s = Shader.Find("Universal Render Pipeline/Lit");
-                if (s == null) s = Shader.Find("Standard");
-                earthMat = new Material(s != null ? s : Shader.Find("Hidden/InternalErrorShader"));
-                earthMat.color = Color.blue;
+                Shader s = Shader.Find("Universal Render Pipeline/Lit")
+                        ?? Shader.Find("Standard")
+                        ?? Shader.Find("Hidden/InternalErrorShader");
+                earthMat = new Material(s);
+                earthMat.SetColor("_BaseColor", Color.blue);
             }
             Earth.GetComponent<Renderer>().sharedMaterial = earthMat;
             Earth.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -478,6 +489,7 @@ namespace Mohakash
             var go = Object.Instantiate(prefab, pos, rot, parent);
             go.transform.localScale = Vector3.one * scale;
             go.name = label ?? model;
+            ModelMaterialFixer.Fix(go);
             return go;
         }
 
