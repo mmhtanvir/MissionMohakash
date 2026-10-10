@@ -39,7 +39,7 @@ namespace Mohakash
             // Bloom – subtle scatter halo around the sun disk and bright surfaces.
             // Scatter > 0 gives the soft URP "physically based" bloom look.
             var bloom = p.Add<Bloom>(true);
-            bloom.intensity.Override(1.4f);
+            bloom.intensity.Override(0.9f);
             bloom.threshold.Override(0.92f);
             bloom.scatter.Override(0.72f);
             bloom.tint.Override(new Color(1f, 0.96f, 0.88f));   // warm sun tint
@@ -54,7 +54,7 @@ namespace Mohakash
             ca.postExposure.Override(0.20f);    // slightly brighter scene
             ca.contrast.Override(18f);           // punchy but not crushed
             ca.colorFilter.Override(new Color(1f, 0.98f, 0.94f));   // very slight warm cast
-            ca.saturation.Override(-15f);         // muted, moon-accurate desaturation
+            ca.saturation.Override(-6f);         // muted, moon-accurate desaturation
             ca.hueShift.Override(0f);
 
             // White Balance – cool moon light, countered by a touch of warmth so it reads well.
@@ -70,17 +70,9 @@ namespace Mohakash
 
             // Vignette – helps frame the scene and direct focus to centre.
             var vig = p.Add<Vignette>(true);
-            vig.intensity.Override(0.32f);
+            vig.intensity.Override(0.22f);
             vig.smoothness.Override(0.45f);
             vig.rounded.Override(true);
-
-            // Depth of Field (Bokeh) – very subtle; objects beyond 80 m soften gently.
-            // Keeps the astronaut and nearby terrain in crisp focus.
-            var dof = p.Add<DepthOfField>(true);
-            dof.mode.Override(DepthOfFieldMode.Bokeh);
-            dof.focusDistance.Override(8f);
-            dof.focalLength.Override(50f);
-            dof.aperture.Override(14f);   // high f-stop → narrow bokeh, cinematic but not distracting
 
             // Screen-space Ambient Occlusion via the URP SSAO renderer feature is set up
             // through the Renderer Asset (which ProjectSetup cannot touch from script without
@@ -91,16 +83,6 @@ namespace Mohakash
             smh.midtones.Override(new Vector4(0f, 0f, 0f, 0f));
             smh.highlights.Override(new Vector4(0.01f, 0.005f, 0f, 0.04f));  // warm highlights
 
-            // Film Grain – adds cinematic noise; very subtle to keep performance on Apple Silicon.
-            var fg = p.Add<FilmGrain>(true);
-            fg.type.Override(FilmGrainLookup.Thin1);
-            fg.intensity.Override(0.12f);
-            fg.response.Override(0.8f);
-
-            // Chromatic Aberration – tiny lens fringe on corners; 0.1 is nearly imperceptible.
-            var cabb = p.Add<ChromaticAberration>(true);
-            cabb.intensity.Override(0.06f);
-
             vol.sharedProfile = p;
 
             // ── Shadow quality tweaks ─────────────────────────────────────
@@ -110,6 +92,21 @@ namespace Mohakash
             QualitySettings.shadowCascades          = 4;
             QualitySettings.shadowCascade4Split     = new Vector4(0.04f, 0.12f, 0.30f, 1f);
             QualitySettings.shadowNearPlaneOffset   = 2f;
+
+            // ── Crisp + smooth rendering ──────────────────────────────────
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;   // sharp ground at grazing angles
+            QualitySettings.vSyncCount = 1;                                              // no tearing -> smoother motion
+            Application.targetFrameRate = 60;
+            var urp = QualitySettings.renderPipeline as UniversalRenderPipelineAsset
+                   ?? GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            if (urp != null)
+            {
+                urp.msaaSampleCount = 4;            // smooth model edges (no stair-stepping)
+                urp.supportsHDR = true;
+                urp.shadowDistance = 160f;          // tighter range = sharper shadows
+                urp.shadowCascadeCount = 4;
+                urp.renderScale = 1f;
+            }
 
             return cam;
         }

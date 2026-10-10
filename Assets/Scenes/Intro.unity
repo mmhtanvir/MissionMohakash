@@ -119,22 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!115 &19261144
-MonoScript:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: 
-  serializedVersion: 7
-  m_DefaultReferences: {}
-  m_Icon: {fileID: 0}
-  m_Type: 0
-  m_ExecutionOrder: 0
-  m_ClassName: IntroPlayer
-  m_Namespace: Mohakash
-  m_AssemblyName: Mohakash
---- !u!1 &721902730
+--- !u!1 &518542510
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -142,8 +127,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 721902732}
-  - component: {fileID: 721902731}
+  - component: {fileID: 518542512}
+  - component: {fileID: 518542511}
   m_Layer: 0
   m_Name: Intro Bootstrap
   m_TagString: Untagged
@@ -151,25 +136,25 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &721902731
+--- !u!114 &518542511
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 721902730}
+  m_GameObject: {fileID: 518542510}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 19261144}
+  m_Script: {fileID: 11500000, guid: ad5101bff2faf43f1b5bee36a3d0cacc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Mohakash::Mohakash.IntroPlayer
---- !u!4 &721902732
+--- !u!4 &518542512
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 721902730}
+  m_GameObject: {fileID: 518542510}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -182,4 +167,4 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 721902732}
+  - {fileID: 518542512}

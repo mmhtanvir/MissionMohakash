@@ -16,6 +16,7 @@ namespace Mohakash
         public string Label;                  // HUD marker text (null = no marker)
         public Color MarkerColor = new Color(0.25f, 0.82f, 0.88f);
         public Func<bool> ShowMarker = () => true;
+        public bool Indoor;                   // lives in the habitat interior (HUD only shows markers for where you are)
 
         void OnEnable() => All.Add(this);
         void OnDisable() => All.Remove(this);

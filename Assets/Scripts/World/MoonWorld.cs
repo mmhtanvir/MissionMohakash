@@ -46,9 +46,37 @@ namespace Mohakash
             return h;
         }
 
+        MeshCollider terrainCollider;
+        public float[] HeightGrid { get; private set; }
+        public int GridRes { get; private set; }
+
+        /// <summary>Terrain height straight from the mesh grid (no physics), for the map.</summary>
+        public float GridHeight(float x, float z)
+        {
+            if (HeightGrid == null) return RawHeight(x, z) - RawHeight(0, 0);
+            int r1 = GridRes - 1;
+            float fx = Mathf.Clamp01((x + Size / 2f) / Size) * r1, fz = Mathf.Clamp01((z + Size / 2f) / Size) * r1;
+            int ix = Mathf.Min(r1 - 1, (int)fx), iz = Mathf.Min(r1 - 1, (int)fz);
+            float tx = fx - ix, tz = fz - iz;
+            float a = HeightGrid[iz * GridRes + ix], b = HeightGrid[iz * GridRes + ix + 1];
+            float c = HeightGrid[(iz + 1) * GridRes + ix], d = HeightGrid[(iz + 1) * GridRes + ix + 1];
+            return Mathf.Lerp(Mathf.Lerp(a, b, tx), Mathf.Lerp(c, d, tx), tz);
+        }
+
+        public Vector3 NormalAt(Vector3 p)
+        {
+            if (terrainCollider != null &&
+                terrainCollider.Raycast(new Ray(new Vector3(p.x, 500f, p.z), Vector3.down), out var hit, 1000f))
+                return hit.normal;
+            return Vector3.up;
+        }
+
         public float HeightAt(Vector3 p)
         {
-            if (Physics.Raycast(new Vector3(p.x, 500f, p.z), Vector3.down, out var hit, 1000f))
+            // Ray only the terrain collider. A world-wide raycast also hit the rover / rocks / habitat, so the rover
+            // kept "standing" on its own roof and climbed every frame until it left the screen.
+            if (terrainCollider != null &&
+                terrainCollider.Raycast(new Ray(new Vector3(p.x, 500f, p.z), Vector3.down), out var hit, 1000f))
                 return hit.point.y;
             return RawHeight(p.x, p.z) - RawHeight(0, 0);
         }
@@ -69,7 +97,7 @@ namespace Mohakash
 
         void BuildTerrain()
         {
-            const int res = 129;
+            const int res = 257;   // finer mesh = smoother silhouette + shading
             const int res1 = res - 1;
             float baseH = RawHeight(0, 0);
 
@@ -88,7 +116,7 @@ namespace Mohakash
                 float flat = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(38f, 60f, d));
                 h = Mathf.Lerp(h, 0.15f * (Mathf.PerlinNoise(wx * 0.2f, wz * 0.2f) - 0.5f), flat);
                 verts[iz * res + ix] = new Vector3(wx, h, wz);
-                uvs[iz * res + ix] = new Vector2(ix / (float)res1, iz / (float)res1);
+                uvs[iz * res + ix] = new Vector2(wx / 9f, wz / 9f);   // tile the regolith every 9 m (was one stretched 512px image over 1 km)
             }
 
             for (int iz = 0; iz < res; iz++)
@@ -113,6 +141,9 @@ namespace Mohakash
                 tris[t2++] = a; tris[t2++] = c; tris[t2++] = b;
                 tris[t2++] = b; tris[t2++] = c; tris[t2++] = d2;
             }
+
+            GridRes = res; HeightGrid = new float[res * res];
+            for (int gi = 0; gi < verts.Length; gi++) HeightGrid[gi] = verts[gi].y;
 
             var mesh = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
             mesh.vertices = verts;
@@ -143,6 +174,10 @@ namespace Mohakash
                 // Apply regolith texture if available (URP Lit uses _BaseMap, not mainTexture)
                 var regTex = Resources.Load<Texture2D>("Materials/RegolithTex");
                 if (regTex != null) mat.SetTexture("_BaseMap", regTex);
+                // Fine procedural relief so the ground has grain and the low sun rakes across it.
+                mat.SetTexture("_BumpMap", MakeRegolithNormalMap());
+                mat.SetFloat("_BumpScale", 0.9f);
+                mat.EnableKeyword("_NORMALMAP");
             }
             else
             {
@@ -157,6 +192,7 @@ namespace Mohakash
 
             var collider = go.AddComponent<MeshCollider>();
             collider.sharedMesh = mesh;
+            terrainCollider = collider;
 
             Terrain = go.GetComponent<Terrain>();
             if (Terrain == null)
@@ -167,6 +203,44 @@ namespace Mohakash
                 terrainGo.AddComponent<MeshCollider>().sharedMesh = mesh;
                 Terrain = terrainGo.AddComponent<Terrain>();
             }
+        }
+
+        // Seamless fractal noise -> tangent-space normal map (DXT5nm layout: x in alpha, y in green).
+        static Texture2D MakeRegolithNormalMap()
+        {
+            const int n = 256;
+            var h = new float[n * n];
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float v = 0f, amp = 1f, tot = 0f;
+                for (int o = 0; o < 4; o++)
+                {
+                    float f = 6f * (1 << o) / n;
+                    float a = Mathf.PerlinNoise(x * f, y * f);
+                    float b = Mathf.PerlinNoise((x - n) * f, y * f);
+                    float c = Mathf.PerlinNoise(x * f, (y - n) * f);
+                    float d = Mathf.PerlinNoise((x - n) * f, (y - n) * f);
+                    float u = x / (float)n, w = y / (float)n;
+                    v += amp * (a * (1 - u) * (1 - w) + b * u * (1 - w) + c * (1 - u) * w + d * u * w);
+                    tot += amp; amp *= 0.5f;
+                }
+                h[y * n + x] = v / tot;
+            }
+            var px = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float dx = h[y * n + (x + 1) % n] - h[y * n + (x + n - 1) % n];
+                float dy = h[((y + 1) % n) * n + x] - h[((y + n - 1) % n) * n + x];
+                var nrm = new Vector3(-dx * 14f, -dy * 14f, 1f).normalized;
+                byte nx = (byte)Mathf.RoundToInt((nrm.x * 0.5f + 0.5f) * 255f);
+                byte ny = (byte)Mathf.RoundToInt((nrm.y * 0.5f + 0.5f) * 255f);
+                px[y * n + x] = new Color32(255, ny, ny, nx);
+            }
+            var t = new Texture2D(n, n, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8 };
+            t.SetPixels32(px); t.Apply(true);
+            return t;
         }
 
         void BuildSky()
@@ -182,13 +256,13 @@ namespace Mohakash
             var sunGo = new GameObject("Sun (low polar sun)");
             sunGo.transform.SetParent(transform);
             Sun = sunGo.AddComponent<Light>();
-            Sun.type             = LightType.Directional;
-            Sun.color            = new Color(1f, 0.97f, 0.90f);
-            Sun.intensity        = 3.4f;
-            Sun.shadows          = LightShadows.Soft;
-            Sun.shadowStrength   = 1f;
+            Sun.type = LightType.Directional;
+            Sun.color = new Color(1f, 0.97f, 0.90f);
+            Sun.intensity = 3.4f;
+            Sun.shadows = LightShadows.Soft;
+            Sun.shadowStrength = 1f;
             Sun.shadowNormalBias = 0.4f;
-            Sun.shadowBias       = 0.02f;
+            Sun.shadowBias = 0.02f;
             SetSun(1f);
 
             SunDisk = MakeDisk("Sun disk", "Materials/SunGlow", 22f);

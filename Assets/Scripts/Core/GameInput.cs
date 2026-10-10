@@ -43,6 +43,7 @@ namespace Mohakash
         public static bool Interact => Down(Key.E);
         public static bool Rover => Down(Key.R);
         public static bool Systems => Down(Key.Tab);
+        public static bool MapHeld => Held(Key.M);
         public static bool Pause => Down(Key.Escape);
         public static bool Help => Down(Key.H) || Down(Key.F1);
         public static bool Click => M != null && M.leftButton.wasPressedThisFrame;

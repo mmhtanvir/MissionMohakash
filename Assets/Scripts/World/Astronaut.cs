@@ -43,6 +43,9 @@ namespace Mohakash
 
         // ── Motion state ───────────────────────────────────────────────────
         Vector3  velocity;
+        Vector3  horizVel;            // smoothed horizontal velocity (acceleration instead of instant speed)
+        float    ungroundedTime;      // debounce so slopes/steps do not flicker the air pose
+        LocomotionBlender blender;
         string   currentState;
         bool     isRunning;           // hysteresis flag
         bool     wasGrounded;
@@ -88,12 +91,7 @@ namespace Mohakash
                     if (b.size.y > 0.01f)
                         model.transform.localScale = Vector3.one * (Height / b.size.y);
                 }
-                foreach (var r in model.GetComponentsInChildren<Renderer>())
-                {
-                    // Cast shadows so the astronaut projects a long moon shadow on the terrain
-                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-                    r.receiveShadows    = true;
-                }
+                AstronautSuit.Dress(model, root.transform, Height);
                 foreach (var t in model.GetComponentsInChildren<Transform>())
                     t.gameObject.layer = 2;
 
@@ -125,6 +123,18 @@ namespace Mohakash
                 modelLocalOrigin = modelRoot.localScale;
             }
             prevPosition = transform.position;
+
+            if (anim != null)
+            {
+                var ctrl = anim.runtimeAnimatorController;
+                blender = anim.gameObject.AddComponent<LocomotionBlender>();
+                blender.WalkSpeed = WalkSpeed; blender.RunSpeed = RunSpeed;
+                if (!blender.Init(anim))
+                {
+                    Destroy(blender); blender = null;        // fall back to the Animator Controller states
+                    anim.runtimeAnimatorController = ctrl != null ? ctrl : Resources.Load<RuntimeAnimatorController>("Animation/Astronaut");
+                }
+            }
         }
 
         // ── State animation helpers ────────────────────────────────────────
@@ -139,12 +149,14 @@ namespace Mohakash
 
         public void PlayWave()
         {
+            if (blender != null) { blender.Trigger(LocomotionBlender.Slot.Wave, 2.4f); return; }
             currentState = null;
             Play("Wave", 0.2f);
         }
 
         public void PlayInteract()
         {
+            if (blender != null) { blender.Trigger(LocomotionBlender.Slot.Interact, 0.9f); return; }
             currentState  = null;
             interactTimer = 0.9f;
             Play("Interact", 0.1f);
@@ -154,6 +166,7 @@ namespace Mohakash
         {
             if (Dead) return;
             Dead = true;
+            if (blender != null) { blender.Dead = true; return; }
             Play("Death", 0.2f);
         }
 
@@ -163,6 +176,7 @@ namespace Mohakash
             transform.position = p;
             cc.enabled = true;
             velocity = Vector3.zero;
+            horizVel = Vector3.zero;
         }
 
         // ── Main update ────────────────────────────────────────────────────
@@ -185,77 +199,66 @@ namespace Mohakash
             // ── Gravity + jump ─────────────────────────────────────────────
             bool grounded = cc.isGrounded;
             if (grounded && velocity.y < 0f) velocity.y = -1f;
+            ungroundedTime = grounded ? 0f : ungroundedTime + dt;
 
             if (grounded && !Frozen && GameInput.Jump)
             {
                 // v² = 2gh → v for ~1.8 m apex on the Moon (g = 1.62)
                 velocity.y = Mathf.Sqrt(2f * MoonGravity * 1.8f);
-                Play("Jump", 0.05f);
+                if (blender == null) Play("Jump", 0.05f);
             }
 
             // Ease gravity near apex for the low-gravity float effect
             float gravScale = Mathf.Lerp(1f, 0.55f, Mathf.Clamp01(1f - Mathf.Abs(velocity.y) / 2f));
             velocity.y -= MoonGravity * gravScale * dt;
 
-            // ── Horizontal movement ────────────────────────────────────────
-            Vector3 horizontal = moveDir.normalized * (topSpeed * inputMag);
+            // ── Horizontal movement: accelerate / brake smoothly ───────────
+            Vector3 targetVel = moveDir.normalized * (topSpeed * inputMag);
+            float accel = !grounded ? 3f : (targetVel.sqrMagnitude > horizVel.sqrMagnitude ? 11f : 15f);
+            horizVel = Vector3.MoveTowards(horizVel, targetVel, accel * dt);
+            Vector3 horizontal = horizVel;
             cc.Move((horizontal + Vector3.up * velocity.y) * dt);
 
-            // Face the camera-relative move direction – smooth turn speed
-            if (moveDir.sqrMagnitude > 0.01f)
+            // Turn smoothly (frame-rate independent) toward where we are heading
+            Vector3 faceDir = moveDir.sqrMagnitude > 0.01f ? moveDir : (horizVel.sqrMagnitude > 0.25f ? horizVel : Vector3.zero);
+            if (faceDir.sqrMagnitude > 0.0001f)
                 transform.rotation = Quaternion.Slerp(transform.rotation,
-                    Quaternion.LookRotation(moveDir), 8f * dt);
+                    Quaternion.LookRotation(faceDir), 1f - Mathf.Exp(-11f * dt));
 
-            // ── State transitions ──────────────────────────────────────────
+            // ── State / animation ──────────────────────────────────────────
             float horizSpeed = horizontal.magnitude;
             distanceTravelled += Vector3.Distance(transform.position, prevPosition);
             prevPosition = transform.position;
 
-            // Landing detection
             bool justLanded = !wasGrounded && grounded;
-            if (justLanded) { landTimer = 0.28f; landSquashTimer = LandSquashDur; }
+            if (justLanded && ungroundedTime < 0.001f) { landTimer = 0.22f; landSquashTimer = LandSquashDur; }
             wasGrounded = grounded;
             landTimer  -= dt;
+            bool airborne = ungroundedTime > 0.14f;
 
-            if (!grounded && velocity.y < 1.5f)
+            if (blender != null)
             {
-                Play("Jump_Idle");
+                blender.MoveSpeed = horizSpeed;
+                blender.Airborne  = airborne;
+                blender.Landing   = !airborne && landTimer > 0f && horizSpeed < 1.5f;
+                blender.Dead      = Dead;
             }
-            else if (!grounded)
-            {
-                // still rising – keep Jump clip
-            }
-            else if (landTimer > 0f)
-            {
-                Play("Jump_Land", 0.05f);
-            }
+            else if (airborne && velocity.y < 1.5f) Play("Jump_Idle");
+            else if (airborne) { }
+            else if (landTimer > 0f) Play("Jump_Land", 0.05f);
             else if (inputMag < 0.05f)
             {
                 interactTimer -= dt;
-                if (currentState != "Wave" && interactTimer <= 0f)
-                    Play("Idle");
+                if (currentState != "Wave" && interactTimer <= 0f) Play("Idle");
             }
             else
             {
-                // Hysteresis between Walk and Run
                 if (!isRunning && horizSpeed >= WalkToRunSpeed) isRunning = true;
                 if ( isRunning && horizSpeed <= RunToWalkSpeed) isRunning = false;
-
-                if (isRunning || IsSprinting)
-                {
-                    Play("Run");
-                    // Scale Run clip speed so feet match actual movement
-                    if (anim) anim.speed = Mathf.Clamp(horizSpeed / RunSpeed, 0.6f, 1.5f);
-                }
-                else
-                {
-                    Play("Walk");
-                    if (anim) anim.speed = Mathf.Clamp(horizSpeed / WalkSpeed, 0.5f, 1.3f);
-                }
+                if (isRunning || IsSprinting) { Play("Run"); if (anim) anim.speed = Mathf.Clamp(horizSpeed / RunSpeed, 0.6f, 1.5f); }
+                else { Play("Walk"); if (anim) anim.speed = Mathf.Clamp(horizSpeed / WalkSpeed, 0.5f, 1.3f); }
             }
-
-            // Restore animator speed to 1 when not moving
-            if (inputMag < 0.05f && anim) anim.speed = 1f;
+            if (blender == null && inputMag < 0.05f && anim) anim.speed = 1f;
 
             // ── Procedural bobbing ─────────────────────────────────────────
             ProceduralBob(dt, inputMag, grounded, horizSpeed);
@@ -283,35 +286,7 @@ namespace Mohakash
             }
             modelRoot.localScale = Vector3.Lerp(modelRoot.localScale, targetScale, 12f * dt);
 
-            // Vertical bob when moving on the ground
-            if (grounded && inputMag > 0.05f && horizSpeed > 0.1f)
-            {
-                // Frequency proportional to speed for consistent footstep rhythm
-                float freq = 2.2f * (horizSpeed / WalkSpeed);
-                bobPhase += freq * Mathf.PI * 2f * dt;
-
-                float bobY = Mathf.Sin(bobPhase) * 0.022f * Mathf.Clamp01(horizSpeed / WalkSpeed);
-                var localPos = modelRoot.localPosition;
-                modelRoot.localPosition = new Vector3(localPos.x, bobY, localPos.z);
-            }
-            else
-            {
-                // Return bob to rest
-                var localPos = modelRoot.localPosition;
-                modelRoot.localPosition = Vector3.Lerp(localPos, Vector3.zero, 8f * dt);
-                if (!grounded) bobPhase = 0f;   // reset phase on airborne so landing feels fresh
-            }
-
-            // Gentle head sway when turning (gives a sense of weight in the suit)
-            float turnRate = Frozen ? 0f : GameInput.Move.x * Mathf.Clamp01(horizSpeed / WalkSpeed);
-            headSwayX = Mathf.Lerp(headSwayX,  turnRate * 2.0f,  5f * dt);   // tilt left/right
-            headSwayZ = Mathf.Lerp(headSwayZ, -turnRate * 1.5f,  5f * dt);   // counter-lean
-
-            // Apply the sway on top of any lean – only if the model isn't using root motion.
-            // We rotate the model root by a tiny amount so it doesn't fight the Animator.
-            var currentRot = modelRoot.localRotation;
-            var targetRot  = Quaternion.Euler(headSwayX, 0f, headSwayZ);
-            modelRoot.localRotation = Quaternion.Slerp(currentRot, targetRot, 6f * dt);
+            // (walk bob / head sway removed: the blended clips already carry the body motion)
         }
     }
 }

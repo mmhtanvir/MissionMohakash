@@ -63,6 +63,8 @@ namespace Mohakash
         {
             if (m == null || m.World == null || m.Player == null) return;
 
+            if (mapContainer != null && mapContainer.parent != null) Ui.Show(mapContainer.parent, !m.Model.Inside);
+            if (m.Model != null && m.Model.Inside) return;
             Vector3 playerPos = m.Player.transform.position;
             float   playerYaw = m.Player.transform.eulerAngles.y;
 
@@ -166,7 +168,7 @@ namespace Mohakash
             header.style.justifyContent = Justify.SpaceBetween;
             header.style.marginBottom  = 3;
 
-            var titleLbl = new Label("MAP");
+            var titleLbl = new Label("MAP  (hold M = full map)");
             titleLbl.style.color    = new Color(0.75f, 0.85f, 1f);
             titleLbl.style.fontSize = 10;
             titleLbl.style.unityFontStyleAndWeight = FontStyle.Bold;

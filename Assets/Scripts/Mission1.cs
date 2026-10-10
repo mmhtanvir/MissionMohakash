@@ -41,6 +41,9 @@ namespace Mohakash
         LineRenderer noiseRing, walkRing;
         float ringTimer;
         MinimapSystem Minimap;
+        FullMapSystem FullMap;
+        HabitatInterior Interior;
+        public int SamplesAnalyzed { get; private set; }
 
         static Vector3 Flat(Vector3 v) { v.y = 0; return v; }
 
@@ -76,6 +79,7 @@ namespace Mohakash
             Model.OnEvent += OnModelEvent;
             World.BuildOutpost(Kit);
             BuildInteractables();
+            Interior = HabitatInterior.Build(this);
 
             Player = Astronaut.Create(World.AirlockPoint + new Vector3(2.5f, 0.2f, -1.5f));
             Player.transform.rotation = Quaternion.Euler(0, MoonWorld.EarthAzimuth - 25f, 0);
@@ -98,6 +102,8 @@ namespace Mohakash
             // Minimap – created after the world and interactables are fully built
             Minimap = gameObject.AddComponent<MinimapSystem>();
             Minimap.Init(Ui.Root, this);
+            FullMap = gameObject.AddComponent<FullMapSystem>();
+            FullMap.Init(Ui.Root, this);
             Game.SetCursorFree(false);
         }
 
@@ -209,15 +215,31 @@ namespace Mohakash
         void EnterHabitat()
         {
             Model.EnterHabitat();
-            Player.gameObject.SetActive(false);
-            Cam.Target = World.Hab; Cam.Distance = 30f; Cam.Height = 3f; Cam.AutoOrbit = true;
-            SystemsOpen = false;
-            Game.SetCursorFree(true);
+            if (Interior != null)
+            {
+                // walk around inside: the astronaut moves into the interior room and the camera follows
+                Player.gameObject.SetActive(true);
+                Player.Teleport(HabitatInterior.SpawnPoint);
+                Player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
+                Cam.Target = Player.transform; Cam.AutoOrbit = false; Cam.Distance = 2.9f; Cam.Height = 1.45f;
+                Cam.ClampToTerrain = false; Cam.MaxPitch = 36f; Cam.Snap(0f, 12f);
+                SystemsOpen = false;
+                Game.SetCursorFree(false);
+                Ui.Toast("Inside the habitat. Walk to a station and press E: bunk, lab, console, suit dock, comms, health scan, window.", Severity.Info);
+            }
+            else
+            {
+                Player.gameObject.SetActive(false);
+                Cam.Target = World.Hab; Cam.Distance = 30f; Cam.Height = 3f; Cam.AutoOrbit = true;
+                SystemsOpen = false;
+                Game.SetCursorFree(true);
+            }
         }
 
         public void ExitHabitat()
         {
-            if (!Model.ExitHabitat()) return;
+            if (!Model.ExitHabitat()) { Ui?.Toast($"Suit not ready: {Model.EvaLeft:0.0} h. Rest or speed up time while it refills.", Severity.Warning); return; }
+            Cam.ClampToTerrain = true; Cam.MaxPitch = 70f;
             Player.gameObject.SetActive(true);
             Player.Teleport(World.AirlockPoint + new Vector3(1.8f, 0.3f, 0));
             Cam.Target = Player.transform; Cam.Distance = 4.4f; Cam.Height = 1.5f; Cam.AutoOrbit = false;
@@ -229,13 +251,63 @@ namespace Mohakash
         {
             if (!Model.Inside) return;
             Model.Resting = !Model.Resting;
-            if (Model.Resting) SetSpeed(4);
+            if (Model.Resting) SetSpeed(4); else SetSpeed(1);
             Ui.Toast(Model.Resting ? "Resting: fatigue recovers. Time runs at 4x." : "Awake.", Severity.Info);
         }
 
         public void RepairSuit()
         {
             if (!Model.RepairSuit()) Ui.Toast("No spare parts kit left.", Severity.Warning);
+        }
+
+        // ------------------------------------------------------------------ Habitat stations
+
+        static readonly string[] SampleFacts =
+        {
+            "light-grey anorthosite grains. Highland rock formed when the Moon's early magma ocean cooled, about 4.4 billion years ago.",
+            "dark basalt fragments. Old lava flows rich in iron and titanium. Useful for building materials and finding oxygen.",
+            "sharp, glassy regolith dust. It never weathers, so it clings to suits and seals. This is why airlock cleaning matters.",
+            "a breccia chip: rock shattered and welded back together by an ancient impact. It records the Moon's bombardment history.",
+        };
+
+        public void AnalyzeSample()
+        {
+            if (Model.SamplesDelivered <= SamplesAnalyzed)
+            {
+                Ui.Toast(Model.SamplesCarried > 0 ? "Samples in your bag are delivered automatically when you enter the habitat."
+                                                   : "No samples waiting. Collect regolith at the cyan beacons outside, then bring it in.", Severity.Info);
+                return;
+            }
+            SamplesAnalyzed++;
+            string fact = SampleFacts[(SamplesAnalyzed - 1) % SampleFacts.Length];
+            Model.Log(Severity.Good, $"Sample {SamplesAnalyzed} analysed: {fact}");
+            Ui.Toast($"Sample {SamplesAnalyzed} analysed: {fact}", Severity.Good);
+        }
+
+        public void SuitDockUse()
+        {
+            if (Model.Spares > 0 && Model.SuitIntegrity < 100f) { RepairSuit(); return; }
+            Ui.Toast($"Suit: {Model.EvaLeft:0.0} h of EVA ready, integrity {Model.SuitIntegrity:0}%, {Model.Spares} spare kit(s). Oxygen, battery and CO2 refill while you are inside.", Severity.Info);
+        }
+
+        public void CommsCall()
+        {
+            bool com = Model.Load("COM")?.Powered ?? false;
+            if (!com) { Ui.Toast("Earth link OFFLINE: the COM load has no power. Switch it on at the power & life support console.", Severity.Warning); return; }
+            Ui.Toast("Mission Control (1.3 s radio delay): " + Ui.NextHintPublic(), Severity.Info);
+            Model.Log(Severity.Info, "Called Mission Control for a status check.");
+        }
+
+        public void HealthScan()
+        {
+            var s = Model.Health < 50f || Model.Fatigue > 70f || Model.Dose > 20f ? Severity.Warning : Severity.Good;
+            Ui.Toast($"Health scan: health {Model.Health:0}%, fatigue {Model.Fatigue:0}% (sleep at the bunk to recover), radiation dose {Model.Dose:0.0} of 20 allowed.", s);
+        }
+
+        public void WindowLook()
+        {
+            Cam.Snap(MoonWorld.EarthAzimuth, 6f);
+            Ui.Toast("Earth hangs about 384,400 km away. Radio takes ~1.3 s each way. That is the delay on your Mission Control link.", Severity.Info);
         }
 
         // ------------------------------------------------------------------ Controls
@@ -251,13 +323,13 @@ namespace Mohakash
         {
             Paused = p;
             Time.timeScale = p ? 0f : 1f;
-            Game.SetCursorFree(p || Model == null || Model.Inside || SystemsOpen);
+            Game.SetCursorFree(p || Model == null || SystemsOpen);
         }
 
         public void ToggleSystems()
         {
             SystemsOpen = !SystemsOpen;
-            Game.SetCursorFree(SystemsOpen || Model.Inside);
+            Game.SetCursorFree(SystemsOpen);
         }
 
         void OnModelEvent(LogEntry e)
@@ -292,6 +364,7 @@ namespace Mohakash
             World.SetSun(Model.Sun);
             UpdateRings();
             Minimap?.Tick();
+            FullMap?.Tick();
 
             if (Model.Ended) EndMission();
             GameInput.EndFrame();
@@ -301,8 +374,8 @@ namespace Mohakash
 
         void HandleWorldInput()
         {
-            if (Model.Inside && !SystemsOpen && GameInput.Interact) { ExitHabitat(); return; }
-            bool canAct = !Model.Inside && !SystemsOpen && !Player.Dead;
+            if (Model.Inside && Model.Resting && GameInput.Move.sqrMagnitude > 0.04f) ToggleRest();   // walking away wakes you up
+            bool canAct = !SystemsOpen && !Player.Dead;
             Player.Frozen = !canAct || (Rover != null && Rover.Driving);
 
             Focus = null;
@@ -320,7 +393,7 @@ namespace Mohakash
             if (GameInput.Interact)
             {
                 if (Focus != null) { Focus.Use(); Player.PlayInteract(); }
-                else if (Model.SeisCarried) DeploySeismometer();
+                else if (Model.SeisCarried && !Model.Inside) DeploySeismometer();
             }
         }
 

@@ -39,7 +39,7 @@ namespace Mohakash
             Ui.Show(controls, open);
             controls.BringToFront();
             if (open) Game.SetCursorFree(true);
-            else if (!m.Paused && m.Model != null && !m.Model.Inside && !m.SystemsOpen) Game.SetCursorFree(false);
+            else if (!m.Paused && m.Model != null && !m.SystemsOpen) Game.SetCursorFree(false);
         }
         Label evaWalk;
         readonly Dictionary<Interactable, VisualElement> markerViews = new Dictionary<Interactable, VisualElement>();
@@ -359,9 +359,12 @@ namespace Mohakash
             Ui.Show(hud, m.Current == Mission1.Phase.Operations);
         }
 
+        public string NextHintPublic() => NextHint(m.Model);
+
         string NextHint(MissionModel mo)
         {
-            if (mo.Inside && mo.EvaLeft < 0.6f) return "Suit is refilling. Speed up time (2/3) or rest, then exit with E.";
+            if (mo.Inside && mo.EvaLeft < 0.6f) return "Suit is refilling. Speed up time (2/3) or sleep at the bunk, then use the airlock door.";
+            if (mo.Inside && mo.SamplesDelivered > m.SamplesAnalyzed) return "Analyse your samples at the lab bench (cyan marker).";
             if (m.Kit.Has("SEIS") && !mo.SeisDeployed && !mo.SeisCarried) return "Pick up the seismometer crate next to the airlock (orange marker).";
             if (mo.SeisCarried) return "Carry it beyond the orange 80 m ring, then press E to deploy. The rover (R) is faster.";
             if (mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance) return "Seismometer too close to the base. Pick it up and move it past the orange ring.";
@@ -377,10 +380,10 @@ namespace Mohakash
         {
             string text = null;
             if (m.Rover != null && m.Rover.Driving) text = $"<b>WASD</b> drive (Shift = full speed)   <b>R</b> get out   -   rover battery {mo.RoverBattery:0.0}/{mo.RoverCap:0} PWh";
-            else if (!mo.Inside && !m.SystemsOpen)
+            else if (!m.SystemsOpen)
             {
                 if (m.Focus != null) text = $"<b>E</b>  {m.Focus.Prompt()}";
-                if (m.NearRover) text = (text != null ? text + "     " : "") + $"<b>R</b>  Board rover ({mo.RoverBattery:0.0} PWh)";
+                if (!mo.Inside && m.NearRover) text = (text != null ? text + "     " : "") + $"<b>R</b>  Board rover ({mo.RoverBattery:0.0} PWh)";
             }
             if (text == null && mo.SeisCarried && !mo.Inside && m.Focus == null && !(m.Rover != null && m.Rover.Driving))
             {
@@ -405,7 +408,7 @@ namespace Mohakash
         void UpdateMarkers()
         {
             var cam = Camera.main;
-            bool show = !m.Model.Inside && !m.SystemsOpen;
+            bool show = !m.SystemsOpen;
             foreach (var i in Interactable.All)
             {
                 if (i.Label == null) continue;
@@ -418,7 +421,7 @@ namespace Mohakash
                 }
                 var world = i.transform.position + Vector3.up * 2.4f;
                 var sp = cam.WorldToViewportPoint(world);
-                bool vis = show && i.isActiveAndEnabled && i.ShowMarker() && sp.z > 0;
+                bool vis = show && i.Indoor == m.Model.Inside && i.isActiveAndEnabled && i.ShowMarker() && sp.z > 0;
                 Ui.Show(v, vis);
                 if (!vis) continue;
                 var panelSize = markers.layout.size;
@@ -518,11 +521,12 @@ namespace Mohakash
             Ui.Text(p, "INSIDE THE HABITAT", "h2");
             insideStatus = Ui.Text(p, "", "text");
             var row = Ui.Box(p, "row", "wrap");
+            Ui.Show(row, false);   // the room is now walkable: use the stations (E) instead of these buttons
             Ui.Button(row, "Exit to surface (E)", m.ExitHabitat, "btn-primary");
             restBtn = Ui.Button(row, "Rest", m.ToggleRest);
             repairBtn = Ui.Button(row, "Repair suit (spare)", m.RepairSuit);
             Ui.Button(row, "Systems (Tab)", m.ToggleSystems);
-            Ui.Text(p, "Time speed: buttons at the top or keys 1 / 2 / 3 (1x / 2x / 4x), P = pause.", "small", "muted");
+            Ui.Text(p, "WASD walk, mouse look. Stand at a glowing marker and press E: airlock door, suit dock, bunk, lab, console, comms, health scan, window. Tab = systems. Keys 1 / 2 / 3 speed time.", "small", "muted");
             Ui.Show(inside, false);
         }
 
@@ -533,7 +537,7 @@ namespace Mohakash
             Ui.Show(inside, show);
             if (!show) return;
             insideStatus.text = $"Suit refill: {mo.EvaLeft:0.0} / 4.0 h EVA time   |   Suit integrity {mo.SuitIntegrity:0}%   |   Spares {mo.Spares}\n" +
-                                $"Samples delivered {mo.SamplesDelivered}   |   CO2 cartridges {mo.CartridgeKg:0.0} kg capacity left   |   O2 vented {mo.O2Vented:0.00} kg";
+                                $"Samples delivered {mo.SamplesDelivered} (analysed {m.SamplesAnalyzed})   |   CO2 cartridges {mo.CartridgeKg:0.0} kg capacity left   |   O2 vented {mo.O2Vented:0.00} kg";
             restBtn.text = mo.Resting ? "Wake up" : "Rest (4x)";
             repairBtn.SetEnabled(mo.Spares > 0 && mo.SuitIntegrity < 100);
         }

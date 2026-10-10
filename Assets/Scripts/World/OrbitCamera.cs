@@ -8,12 +8,16 @@ namespace Mohakash
         public Transform Target;
         public float Distance = 4.2f, Height = 1.6f;
         public bool Input = true;       // mouse look enabled
-        public bool AutoOrbit;          // slow cinematic orbit (briefing / habitat view)
+        public bool AutoOrbit;
+        public bool ClampToTerrain = true;   // off inside the habitat interior (it is not on the terrain)
+        public float MaxPitch = 70f;          // slow cinematic orbit (briefing / habitat view)
         public MoonWorld World;
 
         float yaw = 30f, pitch = 14f, zoom = 1f, currentDist;
+        float sYaw = 30f, sPitch = 14f, sZoom = 1f;      // smoothed copies actually used for the camera
+        Vector3 pivotSmooth, pivotVel; Transform lastTarget;
 
-        public void Snap(float newYaw, float newPitch) { yaw = newYaw; pitch = newPitch; }
+        public void Snap(float newYaw, float newPitch) { yaw = newYaw; pitch = newPitch; sYaw = newYaw; sPitch = newPitch; }
 
         void LateUpdate()
         {
@@ -26,16 +30,26 @@ namespace Mohakash
                 pitch += (Game.InvertY ? d.y : -d.y);
                 zoom = Mathf.Clamp(zoom - GameInput.Zoom * 0.0015f, 0.5f, 2.2f);
             }
-            pitch = Mathf.Clamp(pitch, -20f, 70f);
+            pitch = Mathf.Clamp(pitch, -20f, MaxPitch);
 
-            var rot = Quaternion.Euler(pitch, yaw, 0);
-            Vector3 pivot = Target.position + Vector3.up * Height;
-            float want = Distance * zoom;
+            float dtc = Time.unscaledDeltaTime;
+            float lk = 1f - Mathf.Exp(-16f * dtc);
+            sYaw = Mathf.LerpAngle(sYaw, yaw, lk);
+            sPitch = Mathf.Lerp(sPitch, pitch, lk);
+            sZoom = Mathf.Lerp(sZoom, zoom, 1f - Mathf.Exp(-8f * dtc));
+
+            var rot = Quaternion.Euler(sPitch, sYaw, 0);
+            Vector3 rawPivot = Target.position + Vector3.up * Height;
+            if (Target != lastTarget) { pivotSmooth = rawPivot; pivotVel = Vector3.zero; lastTarget = Target; }
+            // critically damped follow removes the jitter of the character stepping / bobbing
+            pivotSmooth = Vector3.SmoothDamp(pivotSmooth, rawPivot, ref pivotVel, 0.07f, Mathf.Infinity, dtc);
+            Vector3 pivot = pivotSmooth;
+            float want = Distance * sZoom;
             if (Physics.SphereCast(pivot, 0.3f, rot * Vector3.back, out var hit, want, ~(1 << 2), QueryTriggerInteraction.Ignore))
                 want = Mathf.Max(0.8f, hit.distance - 0.1f);
-            currentDist = want < currentDist ? want : Mathf.Lerp(currentDist, want, 6f * Time.unscaledDeltaTime);
+            currentDist = want < currentDist ? want : Mathf.Lerp(currentDist, want, 1f - Mathf.Exp(-6f * dtc));
             Vector3 pos = pivot + rot * Vector3.back * currentDist;
-            if (World != null) pos.y = Mathf.Max(pos.y, World.HeightAt(pos) + 0.5f);
+            if (World != null && ClampToTerrain) pos.y = Mathf.Max(pos.y, World.HeightAt(pos) + 0.5f);
             transform.SetPositionAndRotation(pos, Quaternion.LookRotation(pivot - pos));
         }
     }

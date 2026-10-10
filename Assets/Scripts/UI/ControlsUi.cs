@@ -25,6 +25,8 @@ namespace Mohakash
             }),
             ("MISSION", new[]
             {
+                ("M (hold)", "Full map: terrain, sites and your shrinking walk-back circle"),
+                ("Inside the habitat", "Walk around (WASD). Press E at a glowing station: airlock door, bunk, lab, console, suit dock, comms, health scan, window"),
                 ("Tab", "Power panel: switch machines on/off, oxygen maker mode"),
                 ("1 / 2 / 3", "Time speed 1x / 2x / 4x (2x and 4x only inside the habitat)"),
                 ("P", "Pause / resume mission time"),
