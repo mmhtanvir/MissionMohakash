@@ -21,7 +21,7 @@ namespace Mohakash
         public const float SunTravelAzimuth   = 62f;
         public const float EarthAzimuth = 85f, EarthElevation = 7f;
 
-        public Terrain Terrain      { get; private set; }
+        public UnityEngine.Terrain Terrain { get; private set; }
         public Light   Sun          { get; private set; }
         public Transform Hab        { get; private set; }
         public Vector3 AirlockPoint { get; private set; }
@@ -99,15 +99,14 @@ namespace Mohakash
             var layer = Resources.Load<TerrainLayer>("Materials/Regolith");
             if (layer != null) data.terrainLayers = new[] { layer };
 
-            var go = Terrain.CreateTerrainGameObject(data);
+            // Qualify with UnityEngine.Terrain to avoid collision with our Terrain property
+            var go = UnityEngine.Terrain.CreateTerrainGameObject(data);
             go.name = "Moon Terrain (inspired by LOLA polar ridge - not real data)";
             go.transform.position = new Vector3(-Size / 2, MinY, -Size / 2);
-            Terrain = go.GetComponent<Terrain>();
+            Terrain = go.GetComponent<UnityEngine.Terrain>();
             Terrain.materialTemplate = Resources.Load<Material>("Materials/TerrainLit");
-            // Tighter pixel error → smoother edges in close-up; trade off vs distant LOD
             Terrain.heightmapPixelError = 2f;
             Terrain.basemapDistance = 500f;
-            // Draw instanced on Apple Silicon for better frame times
             Terrain.drawInstanced = true;
             go.transform.SetParent(transform);
         }
