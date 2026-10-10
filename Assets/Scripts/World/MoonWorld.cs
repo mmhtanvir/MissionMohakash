@@ -11,7 +11,10 @@
             if (beamMat == null)
             {
                 Shader s = Shader.Find("Sprites/Default");
-                beamMat = new Material(s != null ? s : Shader.Find("Hidden/InternalErrorShader"));
+                if (s != null)
+                    beamMat = new Material(s);
+                else
+                    beamMat = new Material(Shader.Find("Hidden/InternalErrorShader"));
             }
             r.material = new Material(beamMat) { color = c };
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
