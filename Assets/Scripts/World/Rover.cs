@@ -37,17 +37,29 @@ namespace Mohakash
 
             var m = MoonWorld.Spawn("Rover", pos, Quaternion.identity, 0.62f,
                                     root.transform, "Rover model (Quaternius CC0)");
-            if (m != null) MoonWorld.AddBoxCollider(m, 0.9f);
+            if (m != null)
+            {
+                // Fix any glTF/broken materials so the rover is actually visible in URP
+                ModelMaterialFixer.Fix(m);
+                MoonWorld.AddBoxCollider(m, 0.9f);
 
-            var r          = root.AddComponent<Rover>();
-            r.World        = world;
-            r.model        = m ? m.transform : null;
-            r.yaw          = 0f;
+                // Ensure the rover casts and receives shadows
+                foreach (var r in m.GetComponentsInChildren<Renderer>())
+                {
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                    r.receiveShadows    = true;
+                }
+            }
+
+            var r2         = root.AddComponent<Rover>();
+            r2.World       = world;
+            r2.model       = m ? m.transform : null;
+            r2.yaw         = 0f;
 
             // Attach the animator – it reads Rover.Driving and GameInput itself.
             root.AddComponent<RoverAnimator>();
 
-            return r;
+            return r2;
         }
 
         // ── Per-frame driving ──────────────────────────────────────────────
@@ -57,8 +69,8 @@ namespace Mohakash
             if (World == null) return;
             float dt = Time.deltaTime;
 
-            Vector2 input   = Driving ? GameInput.Move : Vector2.zero;
-            float   target  = input.y * MaxSpeed * (GameInput.Sprint ? 1f : 0.7f);
+            Vector2 input  = Driving ? GameInput.Move : Vector2.zero;
+            float   target = input.y * MaxSpeed * (GameInput.Sprint ? 1f : 0.7f);
 
             // Faster acceleration than braking for a snappier feel
             float accelRate = (Mathf.Abs(target) > Mathf.Abs(speed)) ? 3f : 6f;
@@ -70,12 +82,13 @@ namespace Mohakash
             Vector3 fwd  = Quaternion.Euler(0, yaw, 0) * Vector3.forward;
             Vector3 next = transform.position + fwd * speed * dt;
 
-            // ── Boundary clamp ─────────────────────────────────────────────
-            if (next.magnitude > MoonWorld.PlayRadius) { speed = 0; next = transform.position; }
+            // ── Boundary clamp (XZ only) ───────────────────────────────────
+            float xzDist = new Vector3(next.x, 0, next.z).magnitude;
+            if (xzDist > MoonWorld.PlayRadius) { speed = 0; next = transform.position; }
 
             // ── Slope check ────────────────────────────────────────────────
-            float h0   = World.HeightAt(transform.position);
-            float h1   = World.HeightAt(next);
+            float h0   = SampleTerrain(transform.position);
+            float h1   = SampleTerrain(next);
             float dist = Vector3.Distance(new Vector3(next.x, 0, next.z),
                                           new Vector3(transform.position.x, 0, transform.position.z));
             if (dist > 0.0001f && Mathf.Atan2(h1 - h0, dist) * Mathf.Rad2Deg > MaxSlope)
@@ -87,24 +100,21 @@ namespace Mohakash
                     fwd * Mathf.Sign(speed), out var hit, dist + 1.3f,
                     ~0, QueryTriggerInteraction.Ignore) &&
                 !hit.transform.IsChildOf(transform) &&
-                hit.collider.gameObject.name != "Moon Terrain")   // ignore our mesh terrain
+                hit.collider.gameObject.name != "Moon Terrain")
             { speed = 0; next = transform.position; dist = 0; }
 
             // ── Battery drain ──────────────────────────────────────────────
             if (dist > 0 && UseEnergy != null && !UseEnergy(dist))
             { speed = 0; next = transform.position; }
 
-            // ── Move & terrain-follow with smooth vertical settling ────────
-            // Sample target ground height at the new XZ position.
-            float targetY = World.HeightAt(next);
-
-            // Apply moon gravity to vertical velocity, then clamp to ground.
-            // This prevents the rover from instantly teleporting up/down slopes,
-            // which is what causes the jump/fly glitch.
+            // ── Terrain follow with smooth vertical settling ───────────────
+            // Use SampleTerrain (ignores own collider) to get true ground height.
+            float targetY  = SampleTerrain(next);
             float currentY = transform.position.y;
+
             if (currentY > targetY + 0.05f)
             {
-                // Rover is above ground – fall with moon gravity
+                // Above ground – fall with moon gravity
                 verticalVelocity -= Astronaut.MoonGravity * dt;
                 float newY = Mathf.Max(currentY + verticalVelocity * dt, targetY);
                 next.y = newY;
@@ -112,24 +122,39 @@ namespace Mohakash
             }
             else
             {
-                // On ground – snap smoothly to terrain, kill vertical velocity
+                // On ground – settle smoothly, kill vertical velocity
                 next.y = Mathf.Lerp(currentY, targetY, Mathf.Min(1f, 18f * dt));
                 verticalVelocity = 0f;
             }
 
             transform.position = next;
 
-            // Align to terrain normal via raycast
+            // Align to terrain normal
             Vector3 terrainNormal = Vector3.up;
             if (Physics.Raycast(next + Vector3.up * 5f, Vector3.down, out var normalHit, 20f,
-                                 ~0, QueryTriggerInteraction.Ignore))
+                                 ~0, QueryTriggerInteraction.Ignore) &&
+                normalHit.collider.gameObject.name == "Moon Terrain")
                 terrainNormal = normalHit.normal;
-            // Smoothly rotate to terrain normal – slower on rough terrain to avoid snapping
+
             var rot = Quaternion.FromToRotation(Vector3.up, terrainNormal) * Quaternion.Euler(0, yaw, 0);
             transform.rotation = Quaternion.Slerp(transform.rotation, rot, 6f * dt);
 
-            // Expose for RoverAnimator
             CurrentSpeed = speed;
+        }
+
+        /// <summary>
+        /// Samples the terrain height at a world position, ignoring the rover's own colliders.
+        /// Uses the procedural formula as a reliable fallback when the raycast misses.
+        /// </summary>
+        float SampleTerrain(Vector3 pos)
+        {
+            // Raycast from high above, only hit the Moon Terrain mesh collider
+            if (Physics.Raycast(new Vector3(pos.x, 500f, pos.z), Vector3.down, out var hit, 1000f,
+                                 ~0, QueryTriggerInteraction.Ignore) &&
+                hit.collider.gameObject.name == "Moon Terrain")
+                return hit.point.y;
+            // Fallback to the procedural formula
+            return MoonWorld.RawHeight(pos.x, pos.z) - MoonWorld.RawHeight(0, 0);
         }
 
         // ── Helpers ────────────────────────────────────────────────────────
