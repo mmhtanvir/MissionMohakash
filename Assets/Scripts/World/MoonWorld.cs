@@ -21,7 +21,7 @@ namespace Mohakash
         public const float SunTravelAzimuth   = 62f;
         public const float EarthAzimuth = 85f, EarthElevation = 7f;
 
-        public UnityEngine.Terrain Terrain { get; private set; }  // null when using mesh terrain
+        public Terrain Terrain      { get; private set; }
         public Light   Sun          { get; private set; }
         public Transform Hab        { get; private set; }
         public Vector3 AirlockPoint { get; private set; }
@@ -61,14 +61,8 @@ namespace Mohakash
             return h;
         }
 
-        public float HeightAt(Vector3 p)
-        {
-            // Use Physics raycast against the terrain mesh collider
-            if (Physics.Raycast(new Vector3(p.x, 500f, p.z), Vector3.down, out var hit, 1000f))
-                return hit.point.y;
-            // Fallback to procedural formula before mesh collider is ready
-            return RawHeight(p.x, p.z) - RawHeight(0, 0);
-        }
+        public float HeightAt(Vector3 p) =>
+            Terrain != null ? Terrain.SampleHeight(p) + Terrain.transform.position.y : 0f;
         public Vector3 OnGround(float x, float z, float lift = 0f)
         { var p = new Vector3(x, 0, z); p.y = HeightAt(p) + lift; return p; }
 
@@ -83,90 +77,7 @@ namespace Mohakash
 
         // ------------------------------------------------------------------ Terrain
 
-        static Texture2D MakeGreyTex()
-        {
-            var t = new Texture2D(4, 4, TextureFormat.RGB24, false);
-            var grey = new Color(0.38f, 0.37f, 0.35f);
-            for (int i = 0; i < 16; i++) t.SetPixel(i % 4, i / 4, grey);
-            t.Apply();
-            return t;
-        }
-
         void BuildTerrain()
-        {
-            const int res = 129;   // mesh resolution (129×129 verts)
-            const int res1 = res - 1;
-            float baseH = RawHeight(0, 0);
-
-            var verts  = new Vector3[res * res];
-            var norms  = new Vector3[res * res];
-            var uvs    = new Vector2[res * res];
-            var tris   = new int[res1 * res1 * 6];
-
-            for (int iz = 0; iz < res; iz++)
-            for (int ix = 0; ix < res; ix++)
-            {
-                float wx = -Size / 2 + Size * ix / res1;
-                float wz = -Size / 2 + Size * iz / res1;
-                float h  = RawHeight(wx, wz) - baseH;
-                float d  = Mathf.Sqrt(wx * wx + wz * wz);
-                float flat = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(38f, 60f, d));
-                h = Mathf.Lerp(h, 0.15f * (Mathf.PerlinNoise(wx * 0.2f, wz * 0.2f) - 0.5f), flat);
-                verts[iz * res + ix] = new Vector3(wx, h, wz);
-                uvs[iz * res + ix]   = new Vector2(ix / (float)res1, iz / (float)res1);
-            }
-
-            // Normals
-            for (int iz = 0; iz < res; iz++)
-            for (int ix = 0; ix < res; ix++)
-            {
-                int i = iz * res + ix;
-                float hL = ix > 0      ? verts[iz * res + ix - 1].y : verts[i].y;
-                float hR = ix < res1   ? verts[iz * res + ix + 1].y : verts[i].y;
-                float hD = iz > 0      ? verts[(iz-1)*res + ix].y   : verts[i].y;
-                float hU = iz < res1   ? verts[(iz+1)*res + ix].y   : verts[i].y;
-                norms[i] = new Vector3(hL - hR, 2f * (Size / res1), hD - hU).normalized;
-            }
-
-            int t2 = 0;
-            for (int iz = 0; iz < res1; iz++)
-            for (int ix = 0; ix < res1; ix++)
-            {
-                int a = iz * res + ix, b = a + 1, c = a + res, d2 = c + 1;
-                tris[t2++]=a; tris[t2++]=c; tris[t2++]=b;
-                tris[t2++]=b; tris[t2++]=c; tris[t2++]=d2;
-            }
-
-            var mesh = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-            mesh.vertices  = verts;
-            mesh.normals   = norms;
-            mesh.uv        = uvs;
-            mesh.triangles = tris;
-            mesh.RecalculateBounds();
-
-            var go = new GameObject("Moon Terrain");
-            go.transform.SetParent(transform);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var mr = go.AddComponent<MeshRenderer>();
-
-            // Borrow shader from MoonRock material – guaranteed URP Lit shader
-            var rockMat = Resources.Load<Material>("Materials/MoonRock");
-            if (rockMat != null)
-            {
-                var mat = new Material(rockMat);
-                mat.color = new Color(0.38f, 0.37f, 0.35f);
-                mat.SetFloat("_Smoothness", 0.03f);
-                mr.sharedMaterial = mat;
-            }
-
-            // Add a MeshCollider for HeightAt raycasts
-            go.AddComponent<MeshCollider>().sharedMesh = mesh;
-
-            // Store a fake Terrain reference so HeightAt still works via raycast
-            _terrainMeshGo = go;
-        }
-
-        GameObject _terrainMeshGo;
         {
             const int res = 513;
             float baseH = RawHeight(0, 0);
@@ -185,44 +96,19 @@ namespace Mohakash
                 hs[iz, ix] = Mathf.Clamp01((h - baseH - MinY) / HeightRange);
             }
             data.SetHeights(0, 0, hs);
+            var layer = Resources.Load<TerrainLayer>("Materials/Regolith");
+            if (layer != null) data.terrainLayers = new[] { layer };
 
-            // Build the terrain layer in code so it works without running ProjectSetup first.
-            // Load the pre-baked texture if available; fall back to a solid grey.
-            var regTex = Resources.Load<Texture2D>("Materials/RegolithTex");
-            var layer = new TerrainLayer();
-            if (regTex != null)
-            {
-                layer.diffuseTexture = regTex;
-                layer.tileSize       = new Vector2(12f, 12f);
-            }
-            else
-            {
-                // Fallback: 4×4 grey texture – still beats solid pink
-                layer.diffuseTexture = MakeGreyTex();
-                layer.tileSize       = new Vector2(20f, 20f);
-            }
-            layer.smoothness = 0.03f;
-            layer.metallic   = 0f;
-            data.terrainLayers = new[] { layer };
-
-            // Qualify with UnityEngine.Terrain to avoid collision with our Terrain property
-            var go = UnityEngine.Terrain.CreateTerrainGameObject(data);
+            var go = Terrain.CreateTerrainGameObject(data);
             go.name = "Moon Terrain (inspired by LOLA polar ridge - not real data)";
             go.transform.position = new Vector3(-Size / 2, MinY, -Size / 2);
-            Terrain = go.GetComponent<UnityEngine.Terrain>();
-
-            // Get the URP Lit shader from MoonRock.mat which is guaranteed to exist.
-            // Shader.Find() returns null in URP builds so we borrow from an existing asset.
-            var rockMat = Resources.Load<Material>("Materials/MoonRock");
-            var terrainMat = rockMat != null
-                ? new Material(rockMat) { color = new Color(0.38f, 0.37f, 0.35f) }
-                : new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Hidden/InternalErrorShader"));
-            terrainMat.color = new Color(0.38f, 0.37f, 0.35f);
-            terrainMat.SetFloat("_Smoothness", 0.03f);
-            Terrain.materialTemplate = terrainMat;
+            Terrain = go.GetComponent<Terrain>();
+            Terrain.materialTemplate = Resources.Load<Material>("Materials/TerrainLit");
+            // Tighter pixel error → smoother edges in close-up; trade off vs distant LOD
             Terrain.heightmapPixelError = 2f;
-            Terrain.basemapDistance   = 500f;
-            Terrain.drawInstanced     = true;
+            Terrain.basemapDistance = 500f;
+            // Draw instanced on Apple Silicon for better frame times
+            Terrain.drawInstanced = true;
             go.transform.SetParent(transform);
         }
 
@@ -230,11 +116,10 @@ namespace Mohakash
 
         void BuildSky()
         {
-            // Force skybox off – must be set before and after the scene's RenderSettings
-            // can re-assert the default Unity skybox.
-            RenderSettings.skybox = null;
-            DynamicGI.UpdateEnvironment();
+            RenderSettings.skybox    = null;
             RenderSettings.ambientMode  = UnityEngine.Rendering.AmbientMode.Trilight;
+            // Sky, Equator, Ground – gives a subtle vertical colour gradient.
+            // Sky: very dark blue-black. Equator: neutral grey. Ground: warm brown (regolith bounce).
             RenderSettings.ambientSkyColor     = new Color(0.03f, 0.04f, 0.07f);
             RenderSettings.ambientEquatorColor = new Color(0.10f, 0.10f, 0.11f);
             RenderSettings.ambientGroundColor  = new Color(0.06f, 0.05f, 0.04f);
