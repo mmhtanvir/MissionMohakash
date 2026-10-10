@@ -1,0 +1,132 @@
+/* Mission Mohakash UI: dark navy panels, white text, orange accents (GDD §31). Reference resolution 1920x1080. */
+
+.root { flex-grow: 1; color: rgb(236, 241, 250); font-size: 20px; }
+.screen { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+.center { align-items: center; justify-content: center; }
+.dim { background-color: rgba(2, 6, 16, 0.82); }
+.black { background-color: rgb(0, 0, 0); }
+
+.panel {
+    background-color: rgba(9, 18, 38, 0.9);
+    border-color: rgba(120, 160, 220, 0.28);
+    border-width: 1px; border-radius: 10px;
+    padding: 18px 22px;
+}
+.row { flex-direction: row; align-items: center; }
+.col { flex-direction: column; }
+.grow { flex-grow: 1; }
+.wrap { flex-wrap: wrap; }
+.gap { margin-right: 14px; }
+.gap-b { margin-bottom: 10px; }
+
+.title { font-size: 72px; -unity-font-style: bold; color: rgb(255, 255, 255); letter-spacing: 6px; }
+.subtitle { font-size: 24px; color: rgb(255, 150, 60); letter-spacing: 2px; margin-bottom: 30px; }
+.h1 { font-size: 40px; -unity-font-style: bold; margin-bottom: 8px; }
+.h2 { font-size: 26px; -unity-font-style: bold; color: rgb(255, 150, 60); margin-top: 10px; margin-bottom: 6px; }
+.h3 { font-size: 20px; -unity-font-style: bold; margin-bottom: 4px; }
+.text { white-space: normal; font-size: 19px; margin-bottom: 4px; }
+.small { font-size: 16px; white-space: normal; }
+.muted { color: rgb(150, 165, 190); }
+.accent { color: rgb(255, 150, 60); }
+.cyan { color: rgb(80, 215, 230); }
+.good { color: rgb(80, 215, 120); }
+.bad { color: rgb(245, 95, 90); }
+.label-tag { font-size: 13px; color: rgb(255, 190, 120); background-color: rgba(255, 140, 40, 0.15); border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+
+.btn {
+    background-color: rgba(30, 50, 90, 0.95);
+    border-color: rgba(120, 160, 220, 0.4); border-width: 1px; border-radius: 6px;
+    color: rgb(236, 241, 250); font-size: 20px;
+    padding: 8px 18px; margin: 4px;
+    -unity-text-align: middle-center;
+    transition-duration: 0.12s;
+}
+.btn:hover { background-color: rgba(60, 90, 150, 1); border-color: rgb(255, 150, 60); }
+.btn:active { background-color: rgba(255, 140, 40, 0.8); }
+.btn:disabled { opacity: 0.4; }
+.btn-primary { background-color: rgb(235, 120, 30); border-color: rgb(255, 180, 110); -unity-font-style: bold; }
+.btn-primary:hover { background-color: rgb(255, 150, 60); }
+.btn-big { font-size: 26px; padding: 12px 30px; min-width: 360px; }
+.btn-small { font-size: 16px; padding: 3px 10px; margin: 2px; flex-shrink: 0; }
+.noshrink { flex-shrink: 0; }
+.btn-on { background-color: rgba(40, 140, 80, 0.9); }
+.btn-off { background-color: rgba(110, 40, 40, 0.9); }
+
+.dot { width: 13px; height: 13px; margin-right: 8px; flex-shrink: 0; }
+.dot.ok { background-color: rgb(80, 215, 120); border-radius: 7px; }
+.dot.warn { background-color: rgb(245, 195, 50); rotate: 45deg; scale: 0.85 0.85; }
+.dot.crit { background-color: rgb(245, 80, 75); }
+.dot.info { background-color: rgb(80, 215, 230); border-radius: 7px; }
+
+.bar { height: 10px; background-color: rgba(255, 255, 255, 0.1); border-radius: 5px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 5px; background-color: rgb(80, 215, 120); }
+.bar-fill.ok { background-color: rgb(80, 215, 120); }
+.bar-fill.warn { background-color: rgb(245, 195, 50); }
+.bar-fill.crit { background-color: rgb(245, 80, 75); }
+.bar-fill.info { background-color: rgb(80, 215, 230); }
+
+/* HUD */
+.hud-top { position: absolute; top: 12px; left: 290px; right: 12px; justify-content: center; }
+.stat { margin: 0 10px; align-items: center; }
+.stat-name { font-size: 14px; color: rgb(150, 165, 190); }
+.stat-value { font-size: 22px; -unity-font-style: bold; }
+.hud-left { position: absolute; top: 12px; left: 12px; width: 270px; }
+.hud-right { position: absolute; top: 104px; right: 12px; width: 420px; }
+.hud-bottom { position: absolute; bottom: 14px; left: 0; right: 0; align-items: center; }
+.hud-alerts { position: absolute; bottom: 14px; left: 12px; width: 560px; }
+.alert { margin-top: 4px; padding: 6px 10px; border-radius: 6px; background-color: rgba(9, 18, 38, 0.85); }
+.alert.crit-bg { background-color: rgba(120, 20, 20, 0.88); }
+.alert.warn-bg { background-color: rgba(110, 85, 10, 0.88); }
+.alert.good-bg { background-color: rgba(20, 90, 50, 0.85); }
+.prompt { font-size: 24px; padding: 10px 24px; background-color: rgba(9, 18, 38, 0.9); border-radius: 8px; border-color: rgb(255, 150, 60); border-width: 1px; }
+.key { color: rgb(255, 150, 60); -unity-font-style: bold; }
+.banner { position: absolute; top: 120px; left: 0; right: 0; align-items: center; }
+.banner-box { font-size: 26px; padding: 10px 26px; background-color: rgba(150, 20, 20, 0.92); border-radius: 8px; -unity-font-style: bold; }
+.speed-btn { min-width: 52px; font-size: 18px; padding: 4px 8px; margin: 2px; }
+.speed-on { background-color: rgb(235, 120, 30); }
+.marker { position: absolute; align-items: center; translate: -50% -100%; }
+.marker-label { font-size: 15px; background-color: rgba(9, 18, 38, 0.75); padding: 2px 8px; border-radius: 4px; -unity-text-align: middle-center; }
+.marker-pin { width: 10px; height: 10px; rotate: 45deg; margin-top: 3px; }
+.objective { margin-bottom: 3px; }
+.eva { position: absolute; bottom: 90px; right: 12px; width: 380px; }
+
+/* Screens */
+.card { width: 380px; margin: 8px; }
+.card-locked { opacity: 0.55; }
+.scroll { flex-grow: 1; }
+.table-row { flex-direction: row; align-items: center; padding: 4px 6px; border-bottom-width: 1px; border-color: rgba(120, 160, 220, 0.12); }
+.table-row:hover { background-color: rgba(60, 90, 150, 0.25); }
+.cell-name { width: 300px; flex-shrink: 0; }
+.cell { width: 80px; flex-shrink: 0; -unity-text-align: middle-right; }
+.cell-pw { width: 150px; flex-shrink: 0; -unity-text-align: middle-right; font-size: 17px; }
+.cell-wide { flex-grow: 1; padding-left: 14px; white-space: normal; font-size: 15px; color: rgb(150, 165, 190); }
+.qty { width: 46px; flex-shrink: 0; -unity-text-align: middle-center; font-size: 20px; -unity-font-style: bold; }
+.limits { width: 520px; }
+.warning-line { color: rgb(245, 195, 50); white-space: normal; font-size: 17px; margin-bottom: 4px; }
+.skip { position: absolute; right: 40px; bottom: 40px; }
+.fade { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgb(0, 0, 0); transition-property: opacity; transition-duration: 0.8s; }
+
+/* Simple menus (Milestone 02b) */
+.kicker-blue { color: rgb(90, 160, 255); font-size: 20px; letter-spacing: 1px; margin-bottom: 6px; }
+.subtitle-white { font-size: 30px; color: rgb(236, 241, 250); }
+.tagline { font-size: 22px; color: rgb(150, 165, 190); margin-bottom: 28px; }
+.btn-menu { font-size: 26px; padding: 12px 24px; width: 420px; -unity-text-align: middle-left; }
+.blue { color: rgb(90, 160, 255); }
+.yellow { color: rgb(245, 195, 50); }
+.purple { color: rgb(190, 130, 255); }
+.h2-white { font-size: 28px; -unity-font-style: bold; white-space: normal; margin-top: 4px; margin-bottom: 6px; }
+.mcard { width: 395px; margin: 8px; padding: 16px; border-width: 1px; border-radius: 8px; background-color: rgba(12, 22, 44, 0.9); }
+.mcard > * { margin-bottom: 6px; }
+.mcard-moon { border-color: rgb(90, 160, 255); }
+.mcard-mars { border-color: rgb(255, 150, 60); }
+.section { font-size: 17px; color: rgb(150, 165, 190); margin-top: 6px; margin-bottom: 6px; letter-spacing: 1px; }
+.divider { height: 1px; background-color: rgba(120, 160, 220, 0.3); margin-top: 8px; margin-bottom: 4px; }
+.text-small { white-space: normal; font-size: 18px; }
+.note { font-size: 15px; color: rgb(150, 165, 190); white-space: normal; margin-top: 6px; }
+.chip { font-size: 18px; padding: 6px 14px; margin: 4px; border-width: 1px; border-radius: 8px; border-color: rgb(90, 160, 255); background-color: rgba(30, 50, 90, 0.6); }
+.extra { margin: 4px 0; padding: 8px 12px; border-width: 1px; border-radius: 8px; border-color: rgba(120, 160, 220, 0.4); background-color: rgba(30, 50, 90, 0.6); }
+.extra-on { border-color: rgb(255, 150, 60); background-color: rgba(120, 70, 20, 0.5); }
+.extra Label { font-size: 19px; }
+.bar-big { height: 18px; border-radius: 9px; }
+.ctl-row { padding: 4px 0; border-bottom-width: 1px; border-color: rgba(120, 160, 220, 0.12); }
+.ctl-key { width: 260px; flex-shrink: 0; font-size: 18px; -unity-font-style: bold; color: rgb(255, 150, 60); }
