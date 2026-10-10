@@ -77,6 +77,16 @@ namespace Mohakash
 
         // ------------------------------------------------------------------ Terrain
 
+        static Texture2D MakeGreyTex()
+        {
+            // 4×4 solid grey texture as a guaranteed fallback for the terrain layer
+            var t = new Texture2D(4, 4, TextureFormat.RGB24, false);
+            var grey = new Color(0.38f, 0.37f, 0.35f);
+            for (int i = 0; i < 16; i++) t.SetPixel(i % 4, i / 4, grey);
+            t.Apply();
+            return t;
+        }
+
         void BuildTerrain()
         {
             const int res = 513;
@@ -96,18 +106,43 @@ namespace Mohakash
                 hs[iz, ix] = Mathf.Clamp01((h - baseH - MinY) / HeightRange);
             }
             data.SetHeights(0, 0, hs);
-            var layer = Resources.Load<TerrainLayer>("Materials/Regolith");
-            if (layer != null) data.terrainLayers = new[] { layer };
+
+            // Build the terrain layer in code so it works without running ProjectSetup first.
+            // Load the pre-baked texture if available; fall back to a solid grey.
+            var regTex = Resources.Load<Texture2D>("Materials/RegolithTex");
+            var layer = new TerrainLayer();
+            if (regTex != null)
+            {
+                layer.diffuseTexture = regTex;
+                layer.tileSize       = new Vector2(12f, 12f);
+            }
+            else
+            {
+                // Fallback: 4×4 grey texture – still beats solid pink
+                layer.diffuseTexture = MakeGreyTex();
+                layer.tileSize       = new Vector2(20f, 20f);
+            }
+            layer.smoothness = 0.03f;
+            layer.metallic   = 0f;
+            data.terrainLayers = new[] { layer };
 
             // Qualify with UnityEngine.Terrain to avoid collision with our Terrain property
             var go = UnityEngine.Terrain.CreateTerrainGameObject(data);
             go.name = "Moon Terrain (inspired by LOLA polar ridge - not real data)";
             go.transform.position = new Vector3(-Size / 2, MinY, -Size / 2);
             Terrain = go.GetComponent<UnityEngine.Terrain>();
-            Terrain.materialTemplate = Resources.Load<Material>("Materials/TerrainLit");
+
+            // Use a plain URP Lit material coloured like regolith – always works even if
+            // the terrain layer texture hasn't been imported yet.
+            var terrainMat = Resources.Load<Material>("Materials/TerrainLit");
+            if (terrainMat == null)
+            {
+                terrainMat = new Material(Shader.Find("Universal Render Pipeline/Terrain/Lit"));
+            }
+            Terrain.materialTemplate  = terrainMat;
             Terrain.heightmapPixelError = 2f;
-            Terrain.basemapDistance = 500f;
-            Terrain.drawInstanced = true;
+            Terrain.basemapDistance   = 500f;
+            Terrain.drawInstanced     = true;
             go.transform.SetParent(transform);
         }
 
