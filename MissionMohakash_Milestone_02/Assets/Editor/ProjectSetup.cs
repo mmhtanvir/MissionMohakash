@@ -273,6 +273,26 @@ public static class ProjectSetup
         if (Application.isBatchMode && r.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
     }
 
-    /// <summary>Batch entry point: setup + build.</summary>
+    [MenuItem("Mission Mohakash/Build Windows EXE")]
+    public static void BuildWindows()
+    {
+        // Ensure build output folder exists
+        System.IO.Directory.CreateDirectory("Builds/Windows");
+        var r = BuildPipeline.BuildPlayer(
+            EditorBuildSettings.scenes.Select(s => s.path).ToArray(),
+            "Builds/Windows/MissionMohakash.exe",
+            BuildTarget.StandaloneWindows64,
+            BuildOptions.None);
+        Debug.Log("[Build Windows] " + r.summary.result
+            + "  " + r.summary.totalSize / (1024 * 1024) + " MB"
+            + "  errors: " + r.summary.totalErrors);
+        if (Application.isBatchMode && r.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            EditorApplication.Exit(1);
+    }
+
+    /// <summary>Batch entry point: setup + build macOS.</summary>
     public static void SetupAndBuild() { Run(); BuildMac(); }
+
+    /// <summary>Batch entry point: setup + build Windows EXE.</summary>
+    public static void SetupAndBuildWindows() { Run(); BuildWindows(); }
 }
