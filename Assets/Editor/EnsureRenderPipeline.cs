@@ -61,7 +61,7 @@ public static class EnsureRenderPipeline
             }
             rp = UniversalRenderPipelineAsset.Create(rd);
             rp.supportsHDR = true;                 // sun glow / bloom need HDR
-            rp.shadowDistance = 160f;
+            rp.shadowDistance = 500f;              // cover full 1000m play area
             AssetDatabase.CreateAsset(rp, RpPath);
             AssetDatabase.SaveAssets();
         }
