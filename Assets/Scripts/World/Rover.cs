@@ -25,6 +25,7 @@ namespace Mohakash
         public float CurrentSpeed { get; private set; }
 
         float speed, yaw;
+        float verticalVelocity;   // for smooth terrain following with moon gravity
         Transform model;
 
         // ── Factory ────────────────────────────────────────────────────────
@@ -86,23 +87,46 @@ namespace Mohakash
                     fwd * Mathf.Sign(speed), out var hit, dist + 1.3f,
                     ~0, QueryTriggerInteraction.Ignore) &&
                 !hit.transform.IsChildOf(transform) &&
-                !(hit.collider is TerrainCollider))
+                hit.collider.gameObject.name != "Moon Terrain")   // ignore our mesh terrain
             { speed = 0; next = transform.position; dist = 0; }
 
             // ── Battery drain ──────────────────────────────────────────────
             if (dist > 0 && UseEnergy != null && !UseEnergy(dist))
             { speed = 0; next = transform.position; }
 
-            // ── Move & terrain-align ───────────────────────────────────────
-            next.y = World.HeightAt(next);
+            // ── Move & terrain-follow with smooth vertical settling ────────
+            // Sample target ground height at the new XZ position.
+            float targetY = World.HeightAt(next);
+
+            // Apply moon gravity to vertical velocity, then clamp to ground.
+            // This prevents the rover from instantly teleporting up/down slopes,
+            // which is what causes the jump/fly glitch.
+            float currentY = transform.position.y;
+            if (currentY > targetY + 0.05f)
+            {
+                // Rover is above ground – fall with moon gravity
+                verticalVelocity -= Astronaut.MoonGravity * dt;
+                float newY = Mathf.Max(currentY + verticalVelocity * dt, targetY);
+                next.y = newY;
+                if (newY <= targetY + 0.05f) verticalVelocity = 0f;
+            }
+            else
+            {
+                // On ground – snap smoothly to terrain, kill vertical velocity
+                next.y = Mathf.Lerp(currentY, targetY, Mathf.Min(1f, 18f * dt));
+                verticalVelocity = 0f;
+            }
+
             transform.position = next;
 
             // Align to terrain normal via raycast
             Vector3 terrainNormal = Vector3.up;
-            if (Physics.Raycast(next + Vector3.up * 5f, Vector3.down, out var normalHit, 20f))
+            if (Physics.Raycast(next + Vector3.up * 5f, Vector3.down, out var normalHit, 20f,
+                                 ~0, QueryTriggerInteraction.Ignore))
                 terrainNormal = normalHit.normal;
+            // Smoothly rotate to terrain normal – slower on rough terrain to avoid snapping
             var rot = Quaternion.FromToRotation(Vector3.up, terrainNormal) * Quaternion.Euler(0, yaw, 0);
-            transform.rotation = Quaternion.Slerp(transform.rotation, rot, 8f * dt);
+            transform.rotation = Quaternion.Slerp(transform.rotation, rot, 6f * dt);
 
             // Expose for RoverAnimator
             CurrentSpeed = speed;
