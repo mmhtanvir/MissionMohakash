@@ -132,14 +132,14 @@ namespace Mohakash
             go.transform.position = new Vector3(-Size / 2, MinY, -Size / 2);
             Terrain = go.GetComponent<UnityEngine.Terrain>();
 
-            // Use a plain URP Lit material coloured like regolith – always works even if
-            // the terrain layer texture hasn't been imported yet.
-            var terrainMat = Resources.Load<Material>("Materials/TerrainLit");
-            if (terrainMat == null)
-            {
-                terrainMat = new Material(Shader.Find("Universal Render Pipeline/Terrain/Lit"));
-            }
-            Terrain.materialTemplate  = terrainMat;
+            // Create a plain URP Lit material at runtime – guaranteed grey regolith,
+            // no dependency on TerrainLit shader or URP renderer terrain pass.
+            var litShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (litShader == null) litShader = Shader.Find("Standard");
+            var terrainMat = new Material(litShader);
+            terrainMat.color = new Color(0.38f, 0.37f, 0.35f);
+            terrainMat.SetFloat("_Smoothness", 0.03f);
+            Terrain.materialTemplate = terrainMat;
             Terrain.heightmapPixelError = 2f;
             Terrain.basemapDistance   = 500f;
             Terrain.drawInstanced     = true;
