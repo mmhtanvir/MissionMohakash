@@ -115,10 +115,11 @@ namespace Mohakash
 
         void BuildSky()
         {
-            RenderSettings.skybox    = null;
+            // Force skybox off – must be set before and after the scene's RenderSettings
+            // can re-assert the default Unity skybox.
+            RenderSettings.skybox = null;
+            DynamicGI.UpdateEnvironment();
             RenderSettings.ambientMode  = UnityEngine.Rendering.AmbientMode.Trilight;
-            // Sky, Equator, Ground – gives a subtle vertical colour gradient.
-            // Sky: very dark blue-black. Equator: neutral grey. Ground: warm brown (regolith bounce).
             RenderSettings.ambientSkyColor     = new Color(0.03f, 0.04f, 0.07f);
             RenderSettings.ambientEquatorColor = new Color(0.10f, 0.10f, 0.11f);
             RenderSettings.ambientGroundColor  = new Color(0.06f, 0.05f, 0.04f);
