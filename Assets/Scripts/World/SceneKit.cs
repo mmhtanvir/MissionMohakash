@@ -51,10 +51,10 @@ namespace Mohakash
 
             // Color Adjustments – slight cold shift in the shadows, warm in highlights.
             var ca = p.Add<ColorAdjustments>(true);
-            ca.postExposure.Override(0.20f);    // slightly brighter scene
-            ca.contrast.Override(18f);           // punchy but not crushed
+            ca.postExposure.Override(0.35f);    // slightly brighter scene
+            ca.contrast.Override(14f);           // punchy but not crushed
             ca.colorFilter.Override(new Color(1f, 0.98f, 0.94f));   // very slight warm cast
-            ca.saturation.Override(-6f);         // muted, moon-accurate desaturation
+            ca.saturation.Override(0f);         // muted, moon-accurate desaturation
             ca.hueShift.Override(0f);
 
             // White Balance – cool moon light, countered by a touch of warmth so it reads well.
@@ -83,6 +83,11 @@ namespace Mohakash
             smh.midtones.Override(new Vector4(0f, 0f, 0f, 0f));
             smh.highlights.Override(new Vector4(0.01f, 0.005f, 0f, 0.04f));  // warm highlights
 
+            var mb = p.Add<MotionBlur>(true);                 // gentle camera blur = smoother-looking motion
+            mb.mode.Override(MotionBlurMode.CameraOnly);
+            mb.intensity.Override(0.18f);
+            mb.quality.Override(MotionBlurQuality.Medium);
+
             vol.sharedProfile = p;
 
             // ── Shadow quality tweaks ─────────────────────────────────────
@@ -101,9 +106,17 @@ namespace Mohakash
                    ?? GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
             if (urp != null)
             {
-                urp.msaaSampleCount = 4;            // smooth model edges (no stair-stepping)
+                urp.msaaSampleCount = 2;            // smooth model edges (no stair-stepping)
                 urp.supportsHDR = true;
-                urp.shadowDistance = 160f;          // tighter range = sharper shadows
+                urp.shadowDistance = 160f;
+                // crisp hard shadows like the reference shots (the setter is not public in every URP version, so use reflection)
+                try
+                {
+                    var f = typeof(UniversalRenderPipelineAsset).GetField("m_MainLightShadowmapResolution",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (f != null) f.SetValue(urp, System.Enum.ToObject(f.FieldType, 4096));
+                }
+                catch (System.Exception) { }
                 urp.shadowCascadeCount = 4;
                 urp.renderScale = 1f;
             }

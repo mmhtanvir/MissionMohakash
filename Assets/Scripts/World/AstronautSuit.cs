@@ -64,6 +64,19 @@ namespace Mohakash
             Part(pack.transform, PrimitiveType.Cylinder, "Tank L", new Vector3(-0.15f, 1.18f, -0.41f) * k, new Vector3(0.13f, 0.26f, 0.13f) * k, OffWhite, sh);
             Part(pack.transform, PrimitiveType.Cylinder, "Tank R", new Vector3(0.15f, 1.18f, -0.41f) * k, new Vector3(0.13f, 0.26f, 0.13f) * k, OffWhite, sh);
             Part(pack.transform, PrimitiveType.Cube, "Stripe", new Vector3(0f, 1.20f, -0.385f) * k, new Vector3(0.40f, 0.06f, 0.02f) * k, Orange, sh);
+            // antenna + blinking status LED
+            Part(pack.transform, PrimitiveType.Cylinder, "Antenna", new Vector3(0.14f, 1.72f, -0.27f) * k, new Vector3(0.012f, 0.16f, 0.012f) * k, Grey, sh);
+            var led = GameObject.CreatePrimitive(PrimitiveType.Sphere); Object.Destroy(led.GetComponent<Collider>());
+            led.name = "Status LED"; led.layer = 2; led.transform.SetParent(pack.transform, false);
+            led.transform.localPosition = new Vector3(0.14f, 1.89f, -0.27f) * k; led.transform.localScale = Vector3.one * 0.035f * k;
+            var lm = new Material(sh); lm.EnableKeyword("_EMISSION"); led.GetComponent<Renderer>().sharedMaterial = lm;
+            var bl = led.AddComponent<Blink>(); bl.Color = new Color(0.1f, 1f, 0.3f); bl.Rate = 0.7f;
+            // helmet lamp, switches on when the sun is low
+            var lampGo = new GameObject("Helmet lamp"); lampGo.transform.SetParent(root, false);
+            lampGo.transform.localPosition = new Vector3(0f, 1.62f, 0.2f) * k; lampGo.transform.localRotation = Quaternion.Euler(8f, 0f, 0f);
+            var lamp = lampGo.AddComponent<Light>(); lamp.type = LightType.Spot; lamp.range = 18f; lamp.spotAngle = 70f; lamp.intensity = 0f; lamp.shadows = LightShadows.None; lamp.color = new Color(1f, 0.97f, 0.9f);
+            Light sun = null; foreach (var l in Object.FindObjectsByType<Light>()) if (l.type == LightType.Directional) sun = l;
+            var nl = lampGo.AddComponent<NightLight>(); nl.Lamp = lamp; nl.Sun = sun; nl.Intensity = 12f;
         }
 
         static void Part(Transform parent, PrimitiveType t, string name, Vector3 pos, Vector3 scale, Color c, Shader sh)

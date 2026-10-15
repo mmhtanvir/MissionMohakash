@@ -149,8 +149,7 @@ namespace Mohakash
 
             // Try to assign the URP unlit material for particles.
             var mr = dustGo.GetComponent<ParticleSystemRenderer>();
-            var mat = Resources.Load<Material>("Materials/Beam");   // additive unlit – looks good for dust
-            if (mat != null) mr.sharedMaterial = mat;
+            mr.sharedMaterial = SurfaceKit.DustMaterial();      // soft grey-tan puffs (Beam was additive cyan)
 
             prevPosition = transform.position;
         }

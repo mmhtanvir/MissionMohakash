@@ -91,7 +91,9 @@ namespace Mohakash
                 GameInput.SimSprint = false; GameInput.SimMove = Vector2.zero;
 
                 m.TestTeleport(m.World.SeisCratePoint + new Vector3(-1.5f, 0, 0));
-                yield return Wait(0.5f); yield return Tap(Key.E); yield return Wait(0.6f);
+                yield return Wait(0.5f); yield return Tap(Key.E); yield return Wait(1.5f);
+                yield return Shot("07a_crouching_for_seis");
+                yield return Wait(3.2f);                      // walk-up + crouch + lift animation
                 yield return Shot("07_carrying_seis");
 
                 if (m.Rover != null)
@@ -108,14 +110,14 @@ namespace Mohakash
                 m.TestTeleport(new Vector3(70f, 0, -70f));
                 yield return Wait(0.8f);
                 yield return Shot("09_deploy_prompt");
-                yield return Tap(Key.E); yield return Wait(1f);
+                yield return Tap(Key.E); yield return Wait(3.4f);                    // lower the crate + let go
                 yield return Shot("10_seis_deployed");
 
                 m.TestTeleport(new Vector3(6f, 0, -10.5f)); yield return Wait(0.5f); yield return Tap(Key.E); yield return Wait(0.3f);
                 foreach (var site in m.SampleSites)
                 {
                     m.TestTeleport(site.transform.position + new Vector3(1.2f, 0, 0));
-                    yield return Wait(0.5f); yield return Tap(Key.E); yield return Wait(0.3f);
+                    yield return Wait(0.5f); yield return Tap(Key.E); yield return Wait(3.8f);   // crouch, grab the rock, bag it
                 }
                 yield return Shot("11_sample_site");
                 m.TestTeleport(m.World.AirlockPoint + new Vector3(1.5f, 0, 0)); yield return Wait(0.5f);

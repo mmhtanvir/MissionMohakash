@@ -29,12 +29,47 @@ namespace Mohakash
             (180, 60, 8, 1.6f), (-200, -260, 60, 14), (30, -150, 14, 3), (-40, -90, 9, 1.8f),
         };
 
+        static float H01(int a, int b, int salt)
+        {
+            unchecked
+            {
+                uint n = (uint)(a * 374761393 + b * 668265263 + salt * 1442695041);
+                n = (n ^ (n >> 13)) * 1274126177u; n ^= n >> 16;
+                return (n & 0xFFFFFF) / 16777216f;
+            }
+        }
+
+        /// <summary>Hundreds of small impact craters (3-18 m) scattered on a jittered grid. Deterministic, so mesh and physics agree.</summary>
+        static float SmallCraters(float x, float z)
+        {
+            const float cell = 34f;
+            int cx = Mathf.FloorToInt(x / cell), cz = Mathf.FloorToInt(z / cell);
+            float h = 0f;
+            for (int dx = -1; dx <= 1; dx++)
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                int ix = cx + dx, iz = cz + dz;
+                if (H01(ix, iz, 1) > 0.62f) continue;
+                float px = (ix + H01(ix, iz, 2)) * cell, pz = (iz + H01(ix, iz, 3)) * cell;
+                float t = H01(ix, iz, 4);
+                float r = Mathf.Lerp(3f, 18f, t * t);
+                float depth = r * 0.16f;
+                float d = Mathf.Sqrt((x - px) * (x - px) + (z - pz) * (z - pz)) / r;
+                if (d < 1f) h -= depth * (1f - d * d);
+                h += depth * 0.30f * Mathf.Exp(-((d - 1f) * (d - 1f)) / 0.045f);
+            }
+            float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(55f, 95f, Mathf.Sqrt(x * x + z * z)));   // keep the outpost area flat
+            return h * fade;
+        }
+
         public static float RawHeight(float x, float z)
         {
             float h = 38f * Mathf.Exp(-(z * z) / (230f * 230f)) + 0.012f * x;
             h += 6f * (Mathf.PerlinNoise(x * 0.004f + 11f, z * 0.004f + 7f) - 0.5f);
             h += 1.6f * (Mathf.PerlinNoise(x * 0.03f + 3f, z * 0.03f + 5f) - 0.5f);
             h += 0.35f * (Mathf.PerlinNoise(x * 0.18f, z * 0.18f) - 0.5f);
+
+            h += SmallCraters(x, z);
 
             foreach (var c in Craters)
             {
@@ -46,6 +81,7 @@ namespace Mohakash
             return h;
         }
 
+        const float MacroTile = 70f, DetailTile = 3.2f;
         MeshCollider terrainCollider;
         public float[] HeightGrid { get; private set; }
         public int GridRes { get; private set; }
@@ -97,7 +133,7 @@ namespace Mohakash
 
         void BuildTerrain()
         {
-            const int res = 257;   // finer mesh = smoother silhouette + shading
+            const int res = 385;   // finer mesh = smoother silhouette + shading
             const int res1 = res - 1;
             float baseH = RawHeight(0, 0);
 
@@ -116,7 +152,7 @@ namespace Mohakash
                 float flat = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(38f, 60f, d));
                 h = Mathf.Lerp(h, 0.15f * (Mathf.PerlinNoise(wx * 0.2f, wz * 0.2f) - 0.5f), flat);
                 verts[iz * res + ix] = new Vector3(wx, h, wz);
-                uvs[iz * res + ix] = new Vector2(wx / 9f, wz / 9f);   // tile the regolith every 9 m (was one stretched 512px image over 1 km)
+                uvs[iz * res + ix] = new Vector2(wx / MacroTile, wz / MacroTile);   // macro texture tiles every 70 m; fine grain comes from the detail maps
             }
 
             for (int iz = 0; iz < res; iz++)
@@ -151,6 +187,7 @@ namespace Mohakash
             mesh.uv = uvs;
             mesh.triangles = tris;
             mesh.RecalculateBounds();
+            mesh.RecalculateTangents();   // needed for normal maps
 
             var go = new GameObject("Moon Terrain");
             go.transform.SetParent(transform);
@@ -167,17 +204,20 @@ namespace Mohakash
                 // Clone the MoonRock material (guaranteed URP Lit shader) and adjust for regolith.
                 // URP Lit uses _BaseColor, not .color / _Color.
                 mat = new Material(rockMat);
-                var regolithColor = new Color(0.80f, 0.78f, 0.74f, 1f);
-                mat.SetColor("_BaseColor", regolithColor);
-                mat.SetFloat("_Smoothness", 0.02f);
+                MakeRegolithTextures(out var macro, out var detailAlb, out var detailNrm);
+                mat.SetColor("_BaseColor", Color.white);
+                mat.SetTexture("_BaseMap", macro);
+                mat.SetTextureScale("_BaseMap", Vector2.one);
+                mat.SetFloat("_Smoothness", 0.03f);
                 mat.SetFloat("_Metallic", 0f);
-                // Apply regolith texture if available (URP Lit uses _BaseMap, not mainTexture)
-                var regTex = Resources.Load<Texture2D>("Materials/RegolithTex");
-                if (regTex != null) mat.SetTexture("_BaseMap", regTex);
-                // Fine procedural relief so the ground has grain and the low sun rakes across it.
-                mat.SetTexture("_BumpMap", MakeRegolithNormalMap());
-                mat.SetFloat("_BumpScale", 0.9f);
-                mat.EnableKeyword("_NORMALMAP");
+                mat.SetTexture("_DetailAlbedoMap", detailAlb);
+                mat.SetTexture("_DetailNormalMap", detailNrm);
+                mat.SetTextureScale("_DetailAlbedoMap", new Vector2(MacroTile / DetailTile, MacroTile / DetailTile));
+                mat.SetFloat("_DetailAlbedoMapScale", 1f);
+                mat.SetFloat("_DetailNormalMapScale", 1.1f);
+                mat.EnableKeyword("_DETAIL_MULX2");
+                mat.SetTexture("_BumpMap", null);
+                mat.DisableKeyword("_NORMALMAP");
             }
             else
             {
@@ -205,42 +245,79 @@ namespace Mohakash
             }
         }
 
-        // Seamless fractal noise -> tangent-space normal map (DXT5nm layout: x in alpha, y in green).
-        static Texture2D MakeRegolithNormalMap()
+        static float Periodic(int x, int y, int n, float freq)
         {
-            const int n = 256;
+            float f = freq / n; float u = x / (float)n, w = y / (float)n;
+            float a = Mathf.PerlinNoise(x * f, y * f), b = Mathf.PerlinNoise((x - n) * f, y * f);
+            float c = Mathf.PerlinNoise(x * f, (y - n) * f), d = Mathf.PerlinNoise((x - n) * f, (y - n) * f);
+            return a * (1 - u) * (1 - w) + b * u * (1 - w) + c * (1 - u) * w + d * u * w;
+        }
+
+        /// <summary>
+        /// Procedural lunar regolith: a bright, mottled macro albedo (tiles every 70 m) plus a grey detail albedo and detail
+        /// normal map (tiles every ~3 m) with grains, pebbles and tiny pits. Real photos show regolith as light grey with hard
+        /// raking shadows, not the near-black we had before.
+        /// </summary>
+        static void MakeRegolithTextures(out Texture2D macro, out Texture2D detailAlbedo, out Texture2D detailNormal)
+        {
+            // macro: low-frequency blotches
+            const int mn = 512;
+            var mp = new Color32[mn * mn];
+            for (int y = 0; y < mn; y++)
+            for (int x = 0; x < mn; x++)
+            {
+                float v = 0.55f * Periodic(x, y, mn, 3f) + 0.30f * Periodic(x, y, mn, 9f) + 0.15f * Periodic(x, y, mn, 27f);
+                float g = Mathf.Clamp01(0.40f + (v - 0.5f) * 0.55f + 0.20f);   // mean ~0.60 (light grey)
+                mp[y * mn + x] = new Color(g, g * 0.985f, g * 0.955f, 1f);
+            }
+            macro = new Texture2D(mn, mn, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8 };
+            macro.SetPixels32(mp); macro.Apply(true);
+
+            // detail height field: grains + pebbles + pits (periodic)
+            const int n = 512;
             var h = new float[n * n];
             for (int y = 0; y < n; y++)
             for (int x = 0; x < n; x++)
             {
-                float v = 0f, amp = 1f, tot = 0f;
-                for (int o = 0; o < 4; o++)
-                {
-                    float f = 6f * (1 << o) / n;
-                    float a = Mathf.PerlinNoise(x * f, y * f);
-                    float b = Mathf.PerlinNoise((x - n) * f, y * f);
-                    float c = Mathf.PerlinNoise(x * f, (y - n) * f);
-                    float d = Mathf.PerlinNoise((x - n) * f, (y - n) * f);
-                    float u = x / (float)n, w = y / (float)n;
-                    v += amp * (a * (1 - u) * (1 - w) + b * u * (1 - w) + c * (1 - u) * w + d * u * w);
-                    tot += amp; amp *= 0.5f;
-                }
-                h[y * n + x] = v / tot;
+                float v = 0.38f * Periodic(x, y, n, 10f) + 0.30f * Periodic(x, y, n, 26f) + 0.20f * Periodic(x, y, n, 64f) + 0.12f * Periodic(x, y, n, 150f);
+                h[y * n + x] = v;
             }
-            var px = new Color32[n * n];
+            var rnd = new System.Random(11);
+            var bright = new float[n * n];
+            for (int i = 0; i < 900; i++)
+            {
+                int cx = rnd.Next(n), cy = rnd.Next(n);
+                float r = 1.5f + (float)rnd.NextDouble() * (float)rnd.NextDouble() * 9f;
+                bool pit = rnd.NextDouble() < 0.35;
+                int ri = Mathf.CeilToInt(r * 2f);
+                for (int dy = -ri; dy <= ri; dy++)
+                for (int dx = -ri; dx <= ri; dx++)
+                {
+                    float d2 = (dx * dx + dy * dy) / (r * r);
+                    if (d2 > 4f) continue;
+                    float k = Mathf.Exp(-d2 * 1.4f);
+                    int xx = (cx + dx + n) % n, yy = (cy + dy + n) % n;
+                    h[yy * n + xx] += (pit ? -0.5f : 0.7f) * k;
+                    bright[yy * n + xx] += (pit ? -0.18f : 0.22f) * k;
+                }
+            }
+            var ap = new Color32[n * n]; var np = new Color32[n * n];
             for (int y = 0; y < n; y++)
             for (int x = 0; x < n; x++)
             {
+                int i = y * n + x;
+                float g = Mathf.Clamp01(0.5f + (h[i] - 0.5f) * 0.28f + bright[i]);     // 0.5 = neutral for the x2 detail blend
+                ap[i] = new Color(g, g, g, 1f);
                 float dx = h[y * n + (x + 1) % n] - h[y * n + (x + n - 1) % n];
                 float dy = h[((y + 1) % n) * n + x] - h[((y + n - 1) % n) * n + x];
-                var nrm = new Vector3(-dx * 14f, -dy * 14f, 1f).normalized;
-                byte nx = (byte)Mathf.RoundToInt((nrm.x * 0.5f + 0.5f) * 255f);
-                byte ny = (byte)Mathf.RoundToInt((nrm.y * 0.5f + 0.5f) * 255f);
-                px[y * n + x] = new Color32(255, ny, ny, nx);
+                var nrm = new Vector3(-dx * 3.2f, -dy * 3.2f, 1f).normalized;
+                byte nx = (byte)Mathf.RoundToInt((nrm.x * 0.5f + 0.5f) * 255f), ny = (byte)Mathf.RoundToInt((nrm.y * 0.5f + 0.5f) * 255f);
+                np[i] = new Color32(255, ny, ny, nx);       // DXT5nm layout
             }
-            var t = new Texture2D(n, n, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8 };
-            t.SetPixels32(px); t.Apply(true);
-            return t;
+            detailAlbedo = new Texture2D(n, n, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8 };
+            detailAlbedo.SetPixels32(ap); detailAlbedo.Apply(true);
+            detailNormal = new Texture2D(n, n, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8 };
+            detailNormal.SetPixels32(np); detailNormal.Apply(true);
         }
 
         void BuildSky()
@@ -320,30 +397,42 @@ namespace Mohakash
         GameObject BuildStars()
         {
             var rnd = new System.Random(42);
-            const int n = 5200;
+            const int baseStars = 5200, bandStars = 9000, n = baseStars + bandStars;
             var v = new Vector3[n * 4];
             var tri = new int[n * 6];
             var col = new Color[n * 4];
 
             for (int i = 0; i < n; i++)
             {
-                var dir = new Vector3(
-                    (float)rnd.NextDouble() * 2f - 1f,
-                    (float)rnd.NextDouble() * 2f - 1f,
-                    (float)rnd.NextDouble() * 2f - 1f).normalized;
+                Vector3 dir;
+                bool band = i >= baseStars;
+                if (!band)
+                {
+                    dir = new Vector3((float)rnd.NextDouble() * 2f - 1f, (float)rnd.NextDouble() * 2f - 1f, (float)rnd.NextDouble() * 2f - 1f).normalized;
+                }
+                else
+                {
+                    // Milky Way: dim, dense stars along a tilted great circle with a gaussian spread
+                    float ang = (float)rnd.NextDouble() * Mathf.PI * 2f;
+                    float g = (float)(rnd.NextDouble() + rnd.NextDouble() + rnd.NextDouble() - 1.5) * 0.28f;
+                    var axis = new Vector3(0.35f, 0.75f, 0.55f).normalized;
+                    var e1 = Vector3.Cross(axis, Vector3.up).normalized; var e2 = Vector3.Cross(axis, e1);
+                    dir = (e1 * Mathf.Cos(ang) + e2 * Mathf.Sin(ang) + axis * g).normalized;
+                }
                 if (dir.y < -0.15f) dir.y = -dir.y;
 
                 var c = dir * 1450f;
 
                 double mag = rnd.NextDouble();
                 float s;
-                if (mag < 0.03) s = 4.5f + (float)rnd.NextDouble() * 3.0f;
+                if (band) s = 0.45f + (float)rnd.NextDouble() * 0.6f;
+                else if (mag < 0.03) s = 4.5f + (float)rnd.NextDouble() * 3.0f;
                 else if (mag < 0.15) s = 2.2f + (float)rnd.NextDouble() * 2.0f;
                 else s = 0.8f + (float)rnd.NextDouble() * 1.4f;
 
                 Color tint;
                 double cls = rnd.NextDouble();
-                float b = 0.55f + (float)rnd.NextDouble() * 0.45f;
+                float b = band ? 0.22f + (float)rnd.NextDouble() * 0.30f : 0.55f + (float)rnd.NextDouble() * 0.45f;
                 if (cls < 0.18)
                     tint = new Color(b * 0.75f, b * 0.88f, b);
                 else if (cls < 0.65)
@@ -427,25 +516,25 @@ namespace Mohakash
 
             float elev = Mathf.Lerp(-4f, 13f, sun);
             Sun.transform.rotation = Quaternion.Euler(elev, SunTravelAzimuth, 0f);
-            Sun.intensity = Mathf.Lerp(0f, 3.4f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.04f, 0.55f, sun)));
+            Sun.intensity = Mathf.Lerp(0f, 4.4f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.04f, 0.55f, sun)));
             Sun.color = Color.Lerp(
                 new Color(1.0f, 0.68f, 0.38f),
                 new Color(1.0f, 0.97f, 0.90f),
                 Mathf.Clamp01(Mathf.InverseLerp(0.1f, 0.7f, sun)));
             Sun.shadowStrength = Mathf.Lerp(0f, 1f, Mathf.InverseLerp(0.08f, 0.45f, sun));
 
-            float earthshine = Mathf.Lerp(0.18f, 0.07f, sun);
+            float earthshine = Mathf.Lerp(0.26f, 0.12f, sun);
             RenderSettings.ambientSkyColor = Color.Lerp(
                 new Color(earthshine, earthshine * 1.05f, earthshine * 1.15f),
-                new Color(0.06f, 0.07f, 0.12f),
+                new Color(0.10f, 0.12f, 0.19f),
                 sun);
             RenderSettings.ambientEquatorColor = Color.Lerp(
-                new Color(0.12f, 0.12f, 0.15f),
-                new Color(0.22f, 0.22f, 0.24f),
+                new Color(0.17f, 0.17f, 0.21f),
+                new Color(0.30f, 0.30f, 0.33f),
                 sun);
             RenderSettings.ambientGroundColor = Color.Lerp(
-                new Color(0.04f, 0.04f, 0.03f),
-                new Color(0.08f, 0.07f, 0.05f),
+                new Color(0.07f, 0.07f, 0.06f),
+                new Color(0.16f, 0.15f, 0.13f),
                 sun);
 
             if (horizonHaze != null)
@@ -549,7 +638,43 @@ namespace Mohakash
             var lander = Spawn("Spaceship", OnGround(-30f, 18f, 0.3f), Quaternion.Euler(0, 140, 0), 1.1f, root, "Lander");
             AddBoxCollider(lander, 0.9f);
 
+            BuildOutpostLights(root);
             SeisCratePoint = OnGround(9f, 5f);
+        }
+
+
+        void BuildOutpostLights(Transform root)
+        {
+            Light sun = null;
+            foreach (var l in FindObjectsByType<Light>()) if (l.type == LightType.Directional) sun = l;
+            var metal = new Material(Shader.Find("Universal Render Pipeline/Lit")); metal.color = new Color(0.55f, 0.56f, 0.58f); metal.SetFloat("_Metallic", 0.85f); metal.SetFloat("_Smoothness", 0.55f);
+            var padMat = new Material(Shader.Find("Universal Render Pipeline/Lit")); padMat.color = new Color(0.32f, 0.31f, 0.30f); padMat.SetFloat("_Smoothness", 0.15f);
+            // landing pad
+            var padPos = OnGround(-30f, 18f, 0f);
+            var pad = GameObject.CreatePrimitive(PrimitiveType.Cylinder); pad.name = "Landing Pad";
+            pad.transform.SetParent(root); pad.transform.position = padPos + Vector3.up * 0.05f; pad.transform.localScale = new Vector3(16f, 0.06f, 16f);
+            pad.GetComponent<Renderer>().sharedMaterial = padMat; Destroy(pad.GetComponent<Collider>());
+            Vector3[] masts = { new Vector3(-24f, 0, 10f), new Vector3(-37f, 0, 11f), new Vector3(-36f, 0, 26f), new Vector3(-23f, 0, 25f), new Vector3(6f, 0, -8f), new Vector3(14f, 0, 12f) };
+            int n = 0;
+            foreach (var m in masts)
+            {
+                var b = OnGround(m.x, m.z, 0f);
+                var pole = GameObject.CreatePrimitive(PrimitiveType.Cylinder); pole.name = "Floodlight Mast";
+                pole.transform.SetParent(root); pole.transform.position = b + Vector3.up * 3f; pole.transform.localScale = new Vector3(0.18f, 3f, 0.18f);
+                pole.GetComponent<Renderer>().sharedMaterial = metal; Destroy(pole.GetComponent<Collider>());
+                var head = GameObject.CreatePrimitive(PrimitiveType.Cube); head.name = "Lamp Head";
+                head.transform.SetParent(root); head.transform.position = b + Vector3.up * 6.1f; head.transform.localScale = new Vector3(0.7f, 0.25f, 0.4f);
+                var hm = new Material(Shader.Find("Universal Render Pipeline/Lit")); hm.color = Color.white; hm.EnableKeyword("_EMISSION"); hm.SetColor("_EmissionColor", new Color(1f, 0.95f, 0.8f) * 2f);
+                head.GetComponent<Renderer>().sharedMaterial = hm; Destroy(head.GetComponent<Collider>());
+                var lg = new GameObject("Spot"); lg.transform.SetParent(head.transform, false); lg.transform.localPosition = Vector3.zero; lg.transform.rotation = Quaternion.Euler(75f, n * 60f, 0);
+                var spot = lg.AddComponent<Light>(); spot.type = LightType.Spot; spot.range = 30f; spot.spotAngle = 95f; spot.color = new Color(1f, 0.95f, 0.85f); spot.intensity = 0f; spot.shadows = LightShadows.None;
+                var nl = lg.AddComponent<NightLight>(); nl.Lamp = spot; nl.Sun = sun; nl.Intensity = 40f; nl.Threshold = 2.2f;
+                var tip = GameObject.CreatePrimitive(PrimitiveType.Sphere); tip.name = "Beacon";
+                tip.transform.SetParent(root); tip.transform.position = b + Vector3.up * 6.5f; tip.transform.localScale = Vector3.one * 0.18f; Destroy(tip.GetComponent<Collider>());
+                var bm = new Material(Shader.Find("Universal Render Pipeline/Lit")); bm.EnableKeyword("_EMISSION"); tip.GetComponent<Renderer>().sharedMaterial = bm;
+                var bl = tip.AddComponent<Blink>(); bl.Color = new Color(1f, 0.15f, 0.1f); bl.Phase = n * 0.37f; bl.Rate = 0.8f;
+                n++;
+            }
         }
 
         public static GameObject Spawn(string model, Vector3 pos, Quaternion rot, float scale, Transform parent, string label = null)

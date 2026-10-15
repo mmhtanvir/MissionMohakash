@@ -1,4 +1,4 @@
-# MISSION MOHAKASH - HANDOFF (Milestone 02)
+# MISSION MOHAKASH - HANDOFF (Milestone 05 - animated astronaut)
 
 ## Goal
 Mission Mohakash (OUTPOST ZERO, "Junior Astronaut Mission Trainer") is a NASA Space Apps 2026 educational game: one astronaut plans a
@@ -79,6 +79,58 @@ Esc pause menu, scroll wheel zoom, H / F1 controls list (also in main menu and p
 4. Install WebGL module; first web build; document size/perf/video limits.
 5. Mission 2 "Into the Shadow": crater-floor darkness, RELAY, ice prospecting (SPEC/ICE-D), WEU water, GEN option (reuse MissionModel patterns).
 6. Audio (suit breathing, alarms), Judge Mode, construction placement.
+
+## Milestone 03 - structure art pass (habitat + base buildings)
+Replaced the 11 Quaternius structure GLBs in `Assets/Resources/Models/` with new procedural, textured sci-fi models modelled on the owner's reference
+screenshots (white riveted panel hulls, gold geodesic domes, blue neon strips, yellow-rail lattice tower with guy wires, gold roof solar rails).
+Terrain, rover (Rover.glb / RoundRover.glb), astronaut and all C# code are UNCHANGED. Same file names, same origins and footprints, so no code edits.
+
+| File (Resources/Models) | Game role (MoonWorld.BuildOutpost) | New look |
+|---|---|---|
+| GeodesicDome.glb | HAB habitat (also main-menu backdrop) | gold-foil geodesic dome on a white panel foundation ring, neon base strip, beacon |
+| Connector.glb | SUI airlock tunnel | white ribbed corridor, glowing hatch, portholes, neon underlight |
+| HouseLong.glb | OGS oxygen generator | long hull module, roof fans, pipes, vent grilles, glowing door |
+| HouseCylinder.glb | STO storage | cylindrical tank-hall, ribs, domed roof, hatch door |
+| RoofAntenna.glb | COM antenna (origin: ground = local y 4.05, as before) | ~14 m tapered base + yellow cage + tank cluster + lattice mast + dishes + 4 guy wires |
+| RoofRadar.glb | RAD monitor (same origin offset) | cabinet, sensor head, dish, trefoil plate |
+| BaseLarge.glb | GAR garage (door faces local +Z) | bunker with side buttress wedges, roll-up door, gold roof solar rail, dish |
+| SolarPanelGround.glb | SOL-S array (panel faces +Z) | tilted 2-panel cell array on pedestal |
+| PickupCrate.glb | BAT battery | dark case, hull caps, LEDs, terminals |
+| PickupJar.glb | TNK-O / TNK-W tanks (same file for both) | white gas bottle with blue band and valve |
+| Spaceship.glb | Lander | gold-foil descent stage, white ascent stage, 4 legs, ladder |
+
+Textures are embedded in each GLB (512 px hull/dark/gold/solar, PNG normal maps; ~9 MB total). `ModelMaterialFixer` already carries base-colour, normal,
+emissive, metallic and roughness into URP Lit, so no setup is needed. Generator source: `tools/structures_v2/` (`python3 textures.py` then
+`python3 build_structs.py <outdir>`; needs numpy, Pillow, matplotlib). All 11 GLBs pass the Khronos glTF validator with 0 errors.
+NOT verified in Unity by me (no Unity here): in-engine look, lighting, and whether the Windows .exe needs a rebuild (it does, to include new models).
+Known limits: TNK-O and TNK-W share one file so they look identical; lander/tower are larger than the Quaternius originals (tower ~14 m on purpose).
+Possible follow-ups: distinct water/oxygen tank files (needs a 2-line MoonWorld.cs change), floodlight masts + landing pad as GLBs, dust berms around bases.
+
+## Milestone 04 - new astronaut, casual crew member, bunk sleep animation
+- NEW `Resources/Models/AstronautEVA.glb`: redesigned suit (white, navy stripes, dark visor with amber band, chest control box, wrist pad, steel gloves, backpack). Clips: Idle, Walk, Run, Jump, Wave, Interact, Death.
+- NEW `Resources/Models/CrewCasual.glb`: suitless crew member (navy tee, grey joggers, white sneakers, short black hair). Same clips plus LieDown, Sleep (loop), GetUp. Same 17-bone skeleton names as the EVA rig.
+- NEW `Scripts/Models/CrewRig.cs`: plays the baked clips through the legacy Animation component (glTFast default). No Animator controller needed.
+- REWRITTEN `Scripts/World/Astronaut.cs`: loads both characters; `SetIndoors(bool)` swaps suit <-> casual; `SetSleeping(want,pos,yaw,exit)` runs Approach -> LieDown -> Sleep -> GetUp -> Leave. Old Quaternius Astronaut.glb, AstronautSuit.cs and LocomotionBlender.cs are no longer used by the player (left in project, harmless).
+- `Mission1.cs`: EnterHabitat/ExitHabitat call `Player.SetIndoors`; new `SyncSleep()` each frame keeps the character in the bunk while `Model.Resting && Model.Inside`.
+- `HabitatInterior.cs`: `BedPosition/BedYaw/BedExit` statics and `SetBedCovered()` (blanket rises over the sleeper).
+NOT verified in Unity (no Unity here): compile, clip names after import, bed alignment. If the character stands in bind pose (arms down) the importer Animation Method is not Legacy.
+
+## Milestone 05 - the astronaut moves: walk, run, jump, pick up, carry, put down, lie in bed
+**Root causes found (the characters never animated in Unity):**
+1. All GLB `.meta` files had `animationMethod: 2` = glTFast **Mecanim** (editor default). `CrewRig` needs **Legacy (1)**; with Mecanim there is no `Animation` component, so every character stayed in bind pose. Fixed in `AstronautEVA.glb.meta`, `CrewCasual.glb.meta`, `Astronaut.glb.meta`, and `Editor/CharacterImportFix.cs` forces Legacy on every re-import so it cannot regress.
+2. The owner's new `AstronautEVA.glb` (2.2 MB textured suit, 14k vertices) was a **static mesh**: no skeleton, no skin, no clips. It was rigged with `tools/crew_v3/rig_eva.py` (A-pose bind, weights by capsule distance, hard rules for backpack/helmet/visor). Mesh, materials and textures are unchanged. The unrigged original is kept in `tools/crew_v3/original/`.
+
+**Clips (both `AstronautEVA.glb` and `CrewCasual.glb`):** Idle Walk Run Jump Wave Interact Death LieDown Sleep GetUp **PickUp PutDown CarryIdle CarryWalk CarryRun**. Sockets on both: `Socket_Hold` (in front of chest, where a held crate sits), `Socket_HandL/R`, `Socket_Back`, EVA also `Socket_Helmet`.
+
+**Code**
+- `Scripts/World/Astronaut.cs` (rewritten): `PickUp(item, carriedScale, onGrab, keep, onDone)` walks to the item, crouches, grabs (onGrab fires at the grab frame), stands up holding it; `PutDown(point, placedScale, onPlaced)` lowers it, lets go, stands up; `IsCarrying`, `Busy`, `DropHeld()`. While carrying, locomotion plays CarryIdle/Walk/Run. Bunk sequence now works with whichever character is active. `Astronaut.CasualIndoors` (default true) = suit changes into the casual crew model inside the habitat; set false and the suited astronaut stays on and sleeps in the bunk.
+- `Scripts/Models/CrewRig.cs`: `Socket(name)` lookup.
+- `Scripts/Mission1.cs`: seismometer crate / deployed seismometer are picked up with the animation and carried in both hands (old back-mounted copy removed); E in open ground lowers it and places it 0.6 m ahead; regolith samples are crouched for, held, then bagged; E is ignored while the hands are busy; the rover can still be boarded while carrying. `DeploySeismometer(bool instant)` for scripted tests.
+- `Scripts/Dev/AutoTest.cs`: waits lengthened for the new animations (pick-up ~3.5 s, deploy ~3.4 s, sample ~3.8 s).
+- Preview of every pose: `Docs/astronaut_rig_preview.png` (CPU-skinned from the final GLB, orange box = held crate).
+
+**Verified here:** both GLBs re-read the way Unity reads them (nodes, skin, channels), all 15 clips sampled and skinned on the CPU, hand targets solved to < 4 cm, hold pose puts both hands on the crate. **NOT verified (no Unity here):** C# compile (brace balance checked only), in-engine look of the skin weights at shoulders/knees, bed height for the suited astronaut, crate/rock alignment in the hands, timing of the grab/release moments (constants at the top of `Astronaut.cs`: PickGrabAt, PutReleaseAt, ...).
+**Known limits:** suited astronaut lying in the bunk is supine on its life-support pack (raised 0.27 m), looks like lying on a backpack; the default keeps the casual model for sleeping. Skin weights are procedural: expect small stretching at the shoulder pads. Jump while carrying plays the normal Jump clip (arms open, crate stays at the chest).
 
 ## Continue in a new chat
 Continue Mission Mohakash from this handoff. First inspect the attached ZIP and this handoff file. Do not restart, re-plan from scratch, or claim unfinished features are complete. Preserve existing working files, identify the next highest-priority task, implement it, test what is possible, and deliver an updated ZIP plus an updated MISSION_MOHAKASH_HANDOFF.md before the context limit.

@@ -37,7 +37,7 @@ namespace Mohakash
         public readonly List<Interactable> SampleSites = new List<Interactable>();
         public Interactable Focus { get; private set; }
 
-        GameObject seisCrate, seisDeployed, seisOnBack;
+        GameObject seisCrate, seisDeployed;
         LineRenderer noiseRing, walkRing;
         float ringTimer;
         MinimapSystem Minimap;
@@ -124,7 +124,12 @@ namespace Mohakash
                 crate.Available = () => !Model.SeisCarried && !Model.SeisDeployed && seisCrate.activeSelf;
                 crate.ShowMarker = crate.Available;
                 crate.Prompt = () => "Pick up the seismometer";
-                crate.Use = () => { Model.PickUpSeismometer(); seisCrate.SetActive(false); AttachSeisToBack(true); };
+                crate.Use = () =>
+                {
+                    var carried = MoonWorld.Spawn("PickupCrate", seisCrate.transform.position, seisCrate.transform.rotation, 1.0f, null, "SEIS (carried)");
+                    if (carried == null) { Model.PickUpSeismometer(); seisCrate.SetActive(false); return; }
+                    if (!Player.PickUp(carried, CarriedCrateScale, () => { Model.PickUpSeismometer(); seisCrate.SetActive(false); })) Destroy(carried);
+                };
             }
 
             if (Kit.Has("RAD"))
@@ -149,7 +154,15 @@ namespace Mohakash
                 site.Prompt = () => $"Collect regolith sample {name}";
                 site.Use = () =>
                 {
-                    if (Model.CollectSample(name, Flat(p - World.Hab.position).magnitude)) { taken = true; beacon.SetActive(false); }
+                    if (Player.Busy || Player.IsCarrying) { Ui.Toast(Player.IsCarrying ? "Your hands are full: put the seismometer down first (E in open ground)." : "One moment...", Severity.Info); return; }
+                    if (!Model.CollectSample(name, Flat(p - World.Hab.position).magnitude)) return;
+                    taken = true; beacon.SetActive(false);
+                    var chunk = MoonWorld.Spawn("Rock_34W5ymEePk", p + Vector3.up * 0.05f, Quaternion.Euler(0, xz.x, 0), 0.08f, null, "Sample " + name + " (carried)");
+                    if (chunk)
+                    {
+                        foreach (var r in chunk.GetComponentsInChildren<Renderer>()) r.sharedMaterial = Resources.Load<Material>("Materials/SampleRock");
+                        if (!Player.PickUp(chunk, 0.08f, null, false)) Destroy(chunk);
+                    }
                 };
                 SampleSites.Add(site);
             }
@@ -167,28 +180,22 @@ namespace Mohakash
             lander.Use = () => Ui.Toast("The lander is your ride home. Survive to hour 72 and complete the objectives.", Severity.Info);
         }
 
-        void AttachSeisToBack(bool on)
+        // the seismometer crate is held in both hands (Astronaut.PickUp / PutDown); this is its size while carried
+        const float CarriedCrateScale = 0.45f, PlacedCrateScale = 0.7f;
+
+        void DeploySeismometer(bool instant = false)
         {
-            if (on && seisOnBack == null)
-            {
-                seisOnBack = MoonWorld.Spawn("PickupCrate", Player.transform.position, Player.transform.rotation, 0.42f, Player.transform, "SEIS (carried)");
-                if (seisOnBack)
-                {
-                    seisOnBack.transform.localPosition = new Vector3(0, 1.2f, -0.38f);
-                    foreach (var t in seisOnBack.GetComponentsInChildren<Transform>()) t.gameObject.layer = 2;
-                }
-            }
-            if (seisOnBack) seisOnBack.SetActive(on);
+            var p = Player.transform.position + Player.transform.forward * 0.6f;
+            p = World.OnGround(p.x, p.z);
+            if (instant || !Player.IsCarrying) { Player.DropHeld(); FinishDeploy(p); return; }
+            // lower the crate to the ground in front of the astronaut; the placed seismometer appears the moment the hands let go
+            if (!Player.PutDown(p + Vector3.up * 0.3f, PlacedCrateScale, () => FinishDeploy(p))) { Player.DropHeld(); FinishDeploy(p); }
         }
 
-        void DeploySeismometer()
+        void FinishDeploy(Vector3 p)
         {
-            var p = Player.transform.position + Player.transform.forward * 1.2f;
-            p = World.OnGround(p.x, p.z);
             float d = Flat(p - World.Hab.position).magnitude;
             Model.DeploySeismometer(d, p);
-            AttachSeisToBack(false);
-            Player.PlayInteract();
             if (seisDeployed) Destroy(seisDeployed);
             seisDeployed = new GameObject("SEIS (deployed)");
             seisDeployed.transform.position = p;
@@ -207,7 +214,12 @@ namespace Mohakash
             var pick = Interactable.Create("Seismometer", p, 2.6f, seisDeployed.transform);
             pick.MarkerColor = lamp.color;
             pick.Prompt = () => "Pick up the seismometer (to move it)";
-            pick.Use = () => { Model.PickUpSeismometer(); Destroy(seisDeployed); seisDeployed = null; AttachSeisToBack(true); };
+            pick.Use = () =>
+            {
+                var carried = MoonWorld.Spawn("PickupCrate", p + Vector3.up * 0.3f, Quaternion.identity, PlacedCrateScale, null, "SEIS (carried)");
+                if (carried == null) { Model.PickUpSeismometer(); Destroy(seisDeployed); seisDeployed = null; return; }
+                if (!Player.PickUp(carried, CarriedCrateScale, () => { Model.PickUpSeismometer(); Destroy(seisDeployed); seisDeployed = null; })) Destroy(carried);
+            };
         }
 
         // ------------------------------------------------------------------ Habitat
@@ -219,6 +231,7 @@ namespace Mohakash
             {
                 // walk around inside: the astronaut moves into the interior room and the camera follows
                 Player.gameObject.SetActive(true);
+                Player.SetIndoors(true);
                 Player.Teleport(HabitatInterior.SpawnPoint);
                 Player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
                 Cam.Target = Player.transform; Cam.AutoOrbit = false; Cam.Distance = 2.9f; Cam.Height = 1.45f;
@@ -241,10 +254,20 @@ namespace Mohakash
             if (!Model.ExitHabitat()) { Ui?.Toast($"Suit not ready: {Model.EvaLeft:0.0} h. Rest or speed up time while it refills.", Severity.Warning); return; }
             Cam.ClampToTerrain = true; Cam.MaxPitch = 70f;
             Player.gameObject.SetActive(true);
+            Player.SetIndoors(false);
             Player.Teleport(World.AirlockPoint + new Vector3(1.8f, 0.3f, 0));
             Cam.Target = Player.transform; Cam.Distance = 4.4f; Cam.Height = 1.5f; Cam.AutoOrbit = false;
             SetSpeed(1);
             Game.SetCursorFree(false);
+        }
+
+        // keeps the character in the bunk exactly while the model says you are resting inside the habitat
+        void SyncSleep()
+        {
+            if (Player == null || Interior == null) return;
+            bool want = Model.Inside && Model.Resting;
+            Player.SetSleeping(want, HabitatInterior.BedPosition, HabitatInterior.BedYaw, HabitatInterior.BedExit);
+            Interior.SetBedCovered(Player.InBed);
         }
 
         public void ToggleRest()
@@ -352,6 +375,7 @@ namespace Mohakash
             int sk = GameInput.SpeedKey; if (sk >= 0) SetSpeed(sk);
 
             HandleWorldInput();
+            SyncSleep();
 
             float hours = Time.deltaTime * Speed * TestSpeed / RealSecondsPerHour;
             Model.Sprinting = Player.IsSprinting && !Model.Inside;
@@ -380,6 +404,7 @@ namespace Mohakash
 
             Focus = null;
             if (!canAct) return;
+            if (Player.Busy) return;                         // walking to / crouching for / lowering an object
 
             if (Rover != null && Rover.Driving)
             {
@@ -387,7 +412,7 @@ namespace Mohakash
                 return;
             }
 
-            if (Rover != null && Flat(Rover.transform.position - Player.transform.position).magnitude < 4.5f && GameInput.Rover) { BoardRover(); return; }
+            if (Rover != null && Flat(Rover.transform.position - Player.transform.position).magnitude < 4.5f && GameInput.Rover) { BoardRover(); return; }   // the crate stays in the astronaut's hands while driving
 
             Focus = Interactable.Nearest(Player.transform.position);
             if (GameInput.Interact)
@@ -452,7 +477,7 @@ namespace Mohakash
 
         // AutoTest helpers
         public void TestTeleport(Vector3 xz) { if (Player.gameObject.activeSelf) Player.Teleport(World.OnGround(xz.x, xz.z, 0.3f)); }
-        public void TestDeploySeis() => DeploySeismometer();
+        public void TestDeploySeis() => DeploySeismometer(true);
         public void TestEnterHabitat() => EnterHabitat();
     }
 }
