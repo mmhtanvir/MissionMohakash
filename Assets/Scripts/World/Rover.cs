@@ -45,6 +45,7 @@ namespace Mohakash
 
             // Attach the animator – it reads Rover.Driving and GameInput itself.
             root.AddComponent<RoverAnimator>();
+            root.AddComponent<RoverTracks>();
 
             return r;
         }

@@ -97,6 +97,7 @@ namespace Mohakash
             a.casualRig = Prepare(a.casualModel);
             if (a.casualModel) a.casualModel.SetActive(false);
             a.AddHelmetLamp(root.transform);
+            root.AddComponent<Footsteps>();
             return a;
         }
 

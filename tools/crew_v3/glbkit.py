@@ -101,7 +101,7 @@ class Geo:
         N = s.N @ np.linalg.inv(A)
         N = N / np.maximum(np.linalg.norm(N, axis=1, keepdims=True), 1e-12)
         I = s.I[:, [0, 2, 1]] if np.linalg.det(A) < 0 else s.I
-        g = Geo.__new__(Geo); g.P = P; g.N = N; g.I = I; g.C = s.C; g.UV = s.UV
+        g = Geo.__new__(Geo); g.P = P; g.N = N; g.I = I; g.C = s.C; g.UV = s.UV; g.JW = getattr(s, 'JW', None)
         return g
 
 def box_geo(sx, sy, sz, r=0.0):
@@ -426,7 +426,11 @@ class Asset:
                     P.append(g.P); N.append(g.N); I.append(g.I + off); off += len(g.P)
                     if mat.tex or mat.nrm: U.append(g.UV if g.UV is not None else _boxuv(g.P, g.N))
                     if anyc: C.append(g.C if g.C is not None else np.ones((len(g.P), 4)))
-                    if skinned: J.append(np.full(len(g.P), 0 if j is None else j))
+                    if skinned:
+                        if getattr(g, 'JW', None) is not None: J.append(g.JW)   # smooth weights: (joints (n,4), weights (n,4))
+                        else:
+                            jj = np.zeros((len(g.P), 4), np.uint16); jj[:, 0] = 0 if j is None else j
+                            ww = np.zeros((len(g.P), 4), np.float32); ww[:, 0] = 1; J.append((jj, ww))
                 P = np.concatenate(P).astype(np.float32); N = np.concatenate(N).astype(np.float32)
                 I = np.concatenate(I)
                 it = np.uint16 if len(P) < 65535 else np.uint32
@@ -436,8 +440,7 @@ class Asset:
                     Cc = np.concatenate(C); Cc = np.concatenate([Cc[:, :3] ** 2.2, Cc[:, 3:]], 1).astype(np.float32)
                     attrs["COLOR_0"] = add_acc(Cc, 5126, "VEC4", 34962)
                 if skinned:
-                    Jv = np.concatenate(J); jj = np.zeros((len(Jv), 4), np.uint16); jj[:, 0] = Jv
-                    ww = np.zeros((len(Jv), 4), np.float32); ww[:, 0] = 1
+                    jj = np.concatenate([x[0] for x in J]).astype(np.uint16); ww = np.concatenate([x[1] for x in J]).astype(np.float32)
                     attrs["JOINTS_0"] = add_acc(jj, 5123, "VEC4", 34962); attrs["WEIGHTS_0"] = add_acc(ww, 5126, "VEC4", 34962)
                 ind = add_acc(I.astype(it).reshape(-1), 5123 if it == np.uint16 else 5125, "SCALAR", 34963)
                 prims.append({"attributes": attrs, "indices": ind, "material": mat_id(mat), "mode": 4})

@@ -11,3 +11,13 @@ Pure Python (numpy, scipy, Pillow, matplotlib). No Unity needed.
 | `original/AstronautEVA_static_original.glb` | The owner's static model, kept so the rig can be re-run if the model changes. |
 
 If you replace the astronaut mesh with another static model: put it in `original/`, adjust the joint positions in `rig_eva.py` (`SK`, `compute_weights`) to the new proportions, rerun, check with `check_glb.py`.
+
+## Milestone 06 - high-quality CrewCasual
+
+| File | What it does |
+|---|---|
+| `crew_hq.py` | `python3 crew_hq.py ../../Assets/Resources/Models/CrewCasual.glb /tmp/crew_tex` - builds the casual crew member from smooth lofted shapes (sculpted head, eyes, ears, hair shell, 5-finger hands, watch, sneakers, sleeve patches) with generated textures + normal maps (knit tee, fleece joggers, skin pores, painted face, hair strands, shoe) and smooth skin weights. Same skeleton, sockets and 15 clips as `crew.build_casual`; upper arms are bound in a 14 deg A-pose. |
+| `preview_hq.py` | `python3 preview_hq.py Model.glb out.png bind|face|poses` - textured pyrender preview with CPU skinning (needs pyrender + PyOpenGL >= 3.1.9). |
+| `original/CrewCasual_v2_blocky.glb` | The previous primitive-built model, kept for rollback. |
+
+`glbkit.py` now accepts per-vertex smooth weights (`geo.JW = (joints[n,4], weights[n,4])`).
