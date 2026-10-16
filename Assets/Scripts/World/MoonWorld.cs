@@ -637,18 +637,19 @@ namespace Mohakash
                                             new Vector3(0.88f, 0.22f, -0.02f));
             HatchPanelPoint = new Vector3(6.95f, OnGround(6.95f, -0.55f).y, -0.55f);
 
-            if (kit.Has("OGS")) AddBoxCollider(Spawn("HouseLong", OnGround(-11f, -1f), Quaternion.Euler(0, 90, 0), 0.8f, root, "OGS - Oxygen Generator module"), 0.9f);
+            // outpost hardware modelled on NASA references (tools/structures_v2/nasa_structs.py), real size, origin on the ground
+            if (kit.Has("OGS")) AddBoxCollider(Spawn("OxygenPlant", OnGround(-11f, -1f), Quaternion.Euler(0, 90, 0), 1f, root, "OGS - Oxygen Generation (electrolysis) plant"), 0.9f);
             if (kit.Has("STO"))
             {
-                var sto = Spawn("HouseCylinder", OnGround(-6f, 11f), Quaternion.identity, 0.85f, root, "STO - Storage Module");
+                var sto = Spawn("LogisticsPallet", OnGround(-6f, 11f), Quaternion.Euler(0, 20, 0), 1f, root, "STO - Logistics pallet (storage)");
                 AddBoxCollider(sto, 0.85f);
             }
-            if (kit.Has("COM")) Spawn("RoofAntenna", OnGround(-3f, -8f, -4.05f), Quaternion.identity, 1f, root, "COM - Communications antenna");
-            if (kit.Has("RAD")) Spawn("RoofRadar", OnGround(6f, -8f, -4.05f), Quaternion.identity, 1f, root, "RAD - Radiation Monitor post");
+            if (kit.Has("COM")) Spawn("CommsTerminal", OnGround(-3f, -8f), Quaternion.Euler(0, EarthAzimuth, 0), 1f, root, "COM - Surface comm terminal (dish on Earth)");
+            if (kit.Has("RAD")) Spawn("RadiationStation", OnGround(6f, -8f), Quaternion.identity, 1f, root, "RAD - Radiation monitor station");
 
             if (kit.Has("GAR"))
             {
-                var gar = Spawn("BaseLarge", OnGround(2f, 26f), Quaternion.Euler(0, 180, 0), 0.75f, root, "GAR - Garage");
+                var gar = Spawn("RoverGarage", OnGround(2f, 26f), Quaternion.Euler(0, 180, 0), 1f, root, "GAR - Rover garage (shielded shelter + charger)");
                 AddBoxCollider(gar, 0.85f);
             }
             GaragePoint = OnGround(2f, 17f);
@@ -657,15 +658,15 @@ namespace Mohakash
             int arrays = kit.Count("SOL-S");
             for (int i = 0; i < arrays; i++)
             {
-                var a = Spawn("SolarPanelGround", OnGround(-9f + i * 5f, -17f), Quaternion.Euler(0, 62f + 180f, 0), 2.6f, root, $"SOL-S Solar Array {i + 1}");
-                if (a) { SolarArrays.Add(a.transform); AddBoxCollider(a); }
+                var a = Spawn("SolarArrayVSAT", OnGround(-9f + i * 5f, -17f), Quaternion.identity, 1f, root, $"SOL-S Vertical Solar Array {i + 1}");
+                if (a) { SolarArrays.Add(a.transform); AddBoxCollider(a); var st = a.AddComponent<SunTracker>(); st.Sun = Sun; }
             }
             for (int i = 0; i < kit.Count("BAT"); i++)
-                AddBoxCollider(Spawn("PickupCrate", OnGround(-13f - i * 1.6f, -12f, 0.6f), Quaternion.identity, 1.3f, root, "BAT - Battery"));
+                AddBoxCollider(Spawn("LunarBattery", OnGround(-13f - i * 2.2f, -12f), Quaternion.identity, 1f, root, "BAT - Battery module"));
             for (int i = 0; i < kit.Count("TNK-O"); i++)
-                Spawn("PickupJar", OnGround(-16f, 3f + i * 1.8f, 1.1f), Quaternion.identity, 1.6f, root, "TNK-O - Oxygen Tank");
+                Spawn("OxygenTank", OnGround(-16f, 3f + i * 1.8f), Quaternion.identity, 1f, root, "TNK-O - Oxygen tank");
             if (kit.Has("TNK-W"))
-                Spawn("PickupJar", OnGround(-16f, 8f, 1.1f), Quaternion.identity, 1.6f, root, "TNK-W - Water Tank");
+                Spawn("WaterTank", OnGround(-16f, 8f), Quaternion.identity, 1f, root, "TNK-W - Water tank");
 
             var lander = Spawn("Spaceship", OnGround(-30f, 18f, 0.3f), Quaternion.Euler(0, 140, 0), 1.1f, root, "Lander");
             AddBoxCollider(lander, 0.9f);
