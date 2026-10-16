@@ -142,7 +142,7 @@ namespace Mohakash
             ForceStandUp();
             CancelAct();
             Indoors = indoors;
-            if (!indoors) { ReattachHelmet(); if (suitShell) Destroy(suitShell); }   // outside the suit is always complete
+            if (!indoors) { ReattachHelmet(); SetPack(0f); if (suitShell) Destroy(suitShell); }   // outside the suit is always complete
             ApplyModelVisibility();
             if (helmetLamp) helmetLamp.SetActive(!indoors);
             AttachHeldToHands();
@@ -445,6 +445,10 @@ namespace Mohakash
         int scripted;                       // >0: a sequence owns the character (input ignored, Busy = true)
         bool suitedIndoors;                 // inside the habitat but still in the EVA suit
         Transform helmet, helmetHome; Vector3 helmetLocalPos; Quaternion helmetLocalRot;
+        // rear-entry hatch: the life-support pack swings open on a side hinge (EVA_Pack's origin) to climb in / out (xEMU / Z-2 style)
+        Transform pack; Quaternion packHome; const float PackOpenDeg = 100f;
+        Transform shellPack; Quaternion shellPackClosed;
+        bool haveGrip; Vector3 gripOffP; Quaternion gripOffR;   // helmet pose relative to the hands, measured at the grip of HelmetOff
         SkinnedMeshRenderer evaBody, casualBody, casualHead;
         GameObject suitShell;               // the empty suit standing in the alcove while you are inside
         public const float HelmetGripAt = 0.8f, HelmetClipLen = 2.6f;   // tools/crew_v3/suit_clips.py
@@ -464,7 +468,10 @@ namespace Mohakash
             if (evaModel)
             {
                 foreach (var t in evaModel.GetComponentsInChildren<Transform>(true))
+                {
                     if (t.name == "EVA_Helmet") { helmet = t; helmetHome = t.parent; helmetLocalPos = t.localPosition; helmetLocalRot = t.localRotation; }
+                    if (t.name == "EVA_Pack") { pack = t; packHome = t.localRotation; }
+                }
                 evaBody = evaModel.GetComponentInChildren<SkinnedMeshRenderer>(true);
             }
             if (casualModel)
@@ -555,7 +562,7 @@ namespace Mohakash
             yield return TurnTo(yaw);
             if (evaRig == null) { suitedIndoors = false; ApplyModelVisibility(); yield break; }
             ShowCasualHead(true);
-            evaRig.Play("HelmetOff", 0.1f, 1f, true); casualRig?.Play("HelmetOff", 0.1f, 1f, true);
+            evaRig.Play("HelmetOff", 0.3f, 1f, true); casualRig?.Play("HelmetOff", 0.3f, 1f, true);
             bool gripped = false; Vector3 offP = Vector3.zero; Quaternion offR = Quaternion.identity;
             for (float t = 0f; t < HelmetClipLen; t += Time.deltaTime)
             {
@@ -564,6 +571,7 @@ namespace Mohakash
                     gripped = true; helmet.SetParent(transform, true);
                     HandsFrame(evaRig, out var m, out var q);
                     offP = Quaternion.Inverse(q) * (helmet.position - m); offR = Quaternion.Inverse(q) * helmet.rotation;
+                    gripOffP = offP; gripOffR = offR; haveGrip = true;
                 }
                 if (gripped) { HandsFrame(evaRig, out var m, out var q); helmet.position = m + q * offP; helmet.rotation = q * offR; }
                 yield return null;
@@ -583,60 +591,95 @@ namespace Mohakash
                 }
                 helmet.position = shelf; helmet.rotation = r1;
             }
-            yield return new WaitForSeconds(0.25f);
-            // step back out of the suit; the empty suit glides into the alcove
+            // settle into a neutral stance (so the stored suit stands naturally), then open the rear-entry hatch
+            evaRig.Play("Idle", 0.45f); casualRig?.Play("Idle", 0.45f);
+            yield return new WaitForSeconds(0.55f);
+            yield return SwingPack(0f, PackOpenDeg, 0.9f);
+            yield return new WaitForSeconds(0.15f);
+            // step back out through the open hatch; then the hatch closes and the empty suit slides into the alcove
             suitShell = BakeSuitShell();
-            suitedIndoors = false; ApplyModelVisibility();
-            Vector3 a = transform.position, back = a - transform.forward * 0.75f;
+            suitedIndoors = false; ApplyModelVisibility(); SetPack(0f);
+            Vector3 a = transform.position, back = a - transform.forward * 0.8f;
             Vector3 s0 = suitShell ? suitShell.transform.position : hang;
-            casualRig?.Play("WalkBack", 0.15f, 1f, true);
-            for (float u = 0f; u < 1.0f; u += Time.deltaTime)
+            casualRig?.Play("WalkBack", 0.2f, 0.45f, true);
+            const float stepOut = 1.4f, total = 2.4f;
+            for (float u = 0f; u < total; u += Time.deltaTime)
             {
-                transform.position = Vector3.Lerp(a, back, u);
-                if (suitShell) suitShell.transform.position = Vector3.Lerp(s0, hang, Smooth(0.15f, 1f, u));
+                transform.position = Vector3.Lerp(a, back, Smooth(0f, stepOut, u));
+                if (u > stepOut - 0.2f) casualRig?.Play("Idle", 0.3f);
+                SetShellPack(PackOpenDeg * (1f - Smooth(stepOut - 0.4f, stepOut + 0.4f, u)));
+                if (suitShell) suitShell.transform.position = Vector3.Lerp(s0, hang, Smooth(stepOut, total, u));
                 yield return null;
             }
-            transform.position = back; if (suitShell) suitShell.transform.position = hang;
+            transform.position = back; SetShellPack(0f); if (suitShell) suitShell.transform.position = hang;
             Rig?.Play("Idle", 0.25f);
             if (held) { held.SetActive(true); AttachHeldToHands(); }
+        }
+
+        void SetPack(float deg) { if (pack) pack.localRotation = packHome * Quaternion.Euler(0f, deg, 0f); }
+        void SetShellPack(float deg) { if (shellPack) shellPack.localRotation = shellPackClosed * Quaternion.Euler(0f, deg, 0f); }
+
+        IEnumerator SwingPack(float from, float to, float dur, bool shell = false)
+        {
+            for (float t = 0f; t < dur; t += Time.deltaTime)
+            {
+                float k = Smooth(0f, dur, t), d = Mathf.Lerp(from, to, k) + (to > from ? 4f : -2f) * Mathf.Sin(k * Mathf.PI) * k;   // tiny settle
+                if (shell) SetShellPack(d); else SetPack(d);
+                yield return null;
+            }
+            if (shell) SetShellPack(to); else SetPack(to);
         }
 
         /// <summary>Going out: step into the suit as it slides out of the alcove, take the helmet from the shelf and put it on.</summary>
         public IEnumerator SuitOn(Vector3 stand, float yaw)
         {
-            // walk straight up to the alcove (no stepping back): stop one short step in front of the stand point, facing it
+            // walk up behind where the suit will stand (no stepping back), facing the alcove
             Vector3 fwd = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-            Vector3 approach = stand - fwd * 0.4f;
+            Vector3 approach = stand - fwd * 0.8f;
             if (held) held.SetActive(false);
             if (Flat(approach - transform.position).magnitude > 0.12f) yield return WalkTo(approach);
             yield return TurnTo(yaw, 0.35f);
-            // the suit slides out of the alcove to meet you, then one step forward into its back hatch
+            // the empty suit slides out of the alcove, its rear hatch swings open
             Vector3 s0 = suitShell ? suitShell.transform.position : stand;
-            for (float u = 0f; u < 0.7f; u += Time.deltaTime)
+            for (float u = 0f; u < 0.9f; u += Time.deltaTime)
             {
-                if (suitShell) suitShell.transform.position = Vector3.Lerp(s0, stand, Smooth(0f, 0.7f, u));
+                if (suitShell) suitShell.transform.position = Vector3.Lerp(s0, stand, Smooth(0f, 0.9f, u));
                 yield return null;
             }
+            if (suitShell) suitShell.transform.position = stand;
+            yield return SwingPack(0f, PackOpenDeg, 0.8f, shell: true);
+            // step forward into the suit through the open hatch
             Vector3 a = transform.position;
-            Rig?.Play("Walk", 0.15f, 0.8f, true);
-            for (float u = 0f; u < 0.55f; u += Time.deltaTime)
+            Rig?.Play("Walk", 0.2f, 0.5f, true);
+            for (float u = 0f; u < 1.2f; u += Time.deltaTime)
             {
-                transform.position = Vector3.Lerp(a, stand, Smooth(0f, 0.55f, u));
+                transform.position = Vector3.Lerp(a, stand, Smooth(0f, 1.2f, u));
                 yield return null;
             }
             transform.position = stand;
             if (suitShell) Destroy(suitShell);
             suitedIndoors = true; ApplyModelVisibility();
-            if (evaRig == null || helmet == null) { ReattachHelmet(); yield break; }
+            if (evaRig == null || helmet == null) { SetPack(0f); ReattachHelmet(); yield break; }
             ShowCasualHead(true);
-            // where the helmet sits relative to the hands at the moment it seats on the head (HelmetOn time = clip - grip)
-            evaRig.SampleAt("HelmetOn", HelmetClipLen - HelmetGripAt);
-            HandsFrame(evaRig, out var m0, out var q0);
-            Vector3 seatP = helmetHome.TransformPoint(helmetLocalPos); Quaternion seatR = helmetHome.rotation * helmetLocalRot;
-            Vector3 offP = Quaternion.Inverse(q0) * (seatP - m0); Quaternion offR = Quaternion.Inverse(q0) * seatR;
-            // take it from the shelf into the hands (first frame of HelmetOn = holding it in front of the chest)
-            evaRig.Play("HelmetOn", 0f, 0f, true); casualRig?.Play("HelmetOn", 0f, 0f, true);
-            yield return null;
+            evaRig.Play("Idle", 0f, 1f, true); casualRig?.Play("Idle", 0f, 1f, true);
+            SetPack(PackOpenDeg);
+            yield return new WaitForSeconds(0.2f);
+            yield return SwingPack(PackOpenDeg, 0f, 0.9f);                // hatch closes and seals behind you
+            yield return new WaitForSeconds(0.2f);
+            // where the helmet sits relative to the hands when it seats on the head = where it was at the grip of HelmetOff
+            Vector3 offP; Quaternion offR;
+            if (haveGrip) { offP = gripOffP; offR = gripOffR; }
+            else
+            {   // never taken off yet this session: sample the seat moment once (the pose is replaced before this frame renders)
+                evaRig.SampleAt("HelmetOn", HelmetClipLen - HelmetGripAt);
+                HandsFrame(evaRig, out var m0, out var q0);
+                Vector3 seatP = helmetHome.TransformPoint(helmetLocalPos); Quaternion seatR = helmetHome.rotation * helmetLocalRot;
+                offP = Quaternion.Inverse(q0) * (seatP - m0); offR = Quaternion.Inverse(q0) * seatR;
+                evaRig.SampleAt("Idle", 0f); evaRig.Play("Idle", 0f, 1f, true);
+            }
+            // blend the arms into the hold pose (first frame of HelmetOn), then take the helmet from the shelf into the hands
+            evaRig.Play("HelmetOn", 0.5f, 0f, true); casualRig?.Play("HelmetOn", 0.5f, 0f, true);
+            yield return new WaitForSeconds(0.5f);
             Vector3 p0 = helmet.position; Quaternion r0 = helmet.rotation;
             for (float u = 0f; u < 0.8f; u += Time.deltaTime)
             {
@@ -672,6 +715,22 @@ namespace Mohakash
             var mesh = new Mesh { name = "Stored suit" }; evaBody.BakeMesh(mesh, true);
             g.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = g.AddComponent<MeshRenderer>(); r.sharedMaterials = evaBody.sharedMaterials;
+            shellPack = null;
+            if (pack)
+            {
+                shellPack = new GameObject("Pack hinge").transform; shellPack.SetParent(root.transform, false);
+                shellPack.SetPositionAndRotation(pack.position, pack.rotation);
+                shellPackClosed = Quaternion.Inverse(root.transform.rotation) * (pack.parent.rotation * packHome);
+            }
+            foreach (var mr in evaModel.GetComponentsInChildren<MeshRenderer>())
+            {
+                if (helmet && mr.transform.IsChildOf(helmet)) continue;
+                var mf = mr.GetComponent<MeshFilter>(); if (mf == null) continue;
+                bool onPack = pack && mr.transform.IsChildOf(pack);
+                var c = new GameObject(mr.name + " (stored)"); c.transform.SetParent(onPack ? shellPack : root.transform, false);
+                c.transform.SetPositionAndRotation(mr.transform.position, mr.transform.rotation); c.transform.localScale = mr.transform.lossyScale;
+                c.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh; c.AddComponent<MeshRenderer>().sharedMaterials = mr.sharedMaterials;
+            }
             return root;
         }
 

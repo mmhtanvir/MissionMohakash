@@ -181,6 +181,95 @@ namespace Mohakash
             return hi;
         }
 
+        // ── three rooms: main habitat (living, galley, hygiene corner, suit alcove, airlock), science lab (NE), resting place (NW) ──
+        const float RoomZ = 0.6f, RoomX = 1.6f, DoorZ = 1.7f, DoorW = 1.0f, DoorH = 2.3f, PartT = 0.12f;
+
+        /// <summary>partition along Z at x, from z0 to z1, with an optional doorway centred at doorZ</summary>
+        void WallAlongZ(string n, float x, float z0, float z1, float doorZ, Material m, Material trim)
+        {
+            if (float.IsNaN(doorZ)) { Box(n, new Vector3(x, H / 2, (z0 + z1) / 2), new Vector3(PartT, H, z1 - z0), m); return; }
+            float a = doorZ - DoorW / 2, b = doorZ + DoorW / 2;
+            Box(n, new Vector3(x, H / 2, (z0 + a) / 2), new Vector3(PartT, H, a - z0), m);
+            Box(n, new Vector3(x, H / 2, (b + z1) / 2), new Vector3(PartT, H, z1 - b), m);
+            Box(n + " lintel", new Vector3(x, (DoorH + H) / 2, doorZ), new Vector3(PartT, H - DoorH, DoorW), m);
+            foreach (float zz in new[] { a, b }) Box(n + " door frame", new Vector3(x, DoorH / 2, zz), new Vector3(PartT + 0.06f, DoorH, 0.06f), trim, false);
+            Box(n + " door head", new Vector3(x, DoorH + 0.03f, doorZ), new Vector3(PartT + 0.06f, 0.06f, DoorW + 0.06f), trim, false);
+        }
+
+        void WallAlongX(string n, float z, float x0, float x1, Material m) =>
+            Box(n, new Vector3((x0 + x1) / 2, H / 2, z), new Vector3(x1 - x0, H, PartT), m);
+
+        /// <param name="yaw">the reader looks along this heading (text faces the opposite way, toward them)</param>
+        void Sign(string text, Vector3 pos, float yaw, Color back)
+        {
+            var b = Box("Sign " + text, pos, new Vector3(0.9f, 0.22f, 0.02f), Mat(back, 0.5f, 0f, 1.2f), false);
+            b.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            var tg = new GameObject("Sign text " + text); tg.transform.SetParent(transform, false);
+            tg.transform.localPosition = pos + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0, 0, -0.015f);
+            tg.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            var tm = tg.AddComponent<TextMesh>(); var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            tm.font = font; tg.GetComponent<MeshRenderer>().sharedMaterial = font.material;
+            tm.text = text; tm.fontSize = 64; tm.characterSize = 0.018f; tm.anchor = TextAnchor.MiddleCenter; tm.color = Color.white;
+        }
+
+        void BuildRooms(Material wall, Material wallDark, Material white, Material steel, Material orange, Material glow, Material lamp)
+        {
+            // resting place (north-west): its own room, doorway from the main habitat
+            WallAlongZ("Rest wall", -RoomX, RoomZ, D / 2, DoorZ, wall, steel);
+            WallAlongX("Rest wall S", RoomZ, -W / 2, -RoomX, wall);
+            Sign("RESTING PLACE", new Vector3(-RoomX + 0.08f, 2.62f, DoorZ), -90f, new Color(0.15f, 0.25f, 0.55f));     // readable from the living side
+            // second bunk along the north wall, crew lockers, a warm reading light
+            var blue = Mat(new Color(0.30f, 0.40f, 0.55f), 0.2f, 0f);
+            Box("Bunk 2 frame", new Vector3(-3.35f, 0.2f, 3.95f), new Vector3(2.1f, 0.4f, 1.05f), wallDark);
+            Box("Bunk 2 mattress", new Vector3(-3.35f, 0.5f, 3.95f), new Vector3(2.0f, 0.2f, 0.95f), blue, false);
+            Box("Bunk 2 pillow", new Vector3(-4.15f, 0.66f, 3.95f), new Vector3(0.4f, 0.13f, 0.7f), white, false);
+            Box("Bunk 2 blanket", new Vector3(-3.0f, 0.63f, 3.95f), new Vector3(1.2f, 0.06f, 0.98f), orange, false);
+            Box("Bunk 2 shelf", new Vector3(-3.35f, 1.9f, 4.33f), new Vector3(2.0f, 0.05f, 0.3f), steel, false);
+            for (int i = 0; i < 2; i++)
+            {
+                Box("Crew locker", new Vector3(-1.9f, 1.1f, 3.0f + i * 0.85f), new Vector3(0.45f, 2.2f, 0.8f), white, true);
+                Box("Locker name strip", new Vector3(-2.13f, 1.7f, 3.0f + i * 0.85f), new Vector3(0.02f, 0.08f, 0.5f), orange, false);
+            }
+            Box("Reading light", new Vector3(-5.6f, 1.55f, 2.9f), new Vector3(0.12f, 0.06f, 0.2f), lamp, false);
+            Box("Rest ceiling panel", new Vector3(-3.8f, H - 0.04f, 2.5f), new Vector3(1.6f, 0.04f, 0.5f), Mat(new Color(1f, 0.85f, 0.65f), 0.2f, 0f, 1.6f), false);
+
+            // science lab (north-east): its own room (bench, microscope, portholes, window seat, stowage)
+            WallAlongZ("Lab wall", RoomX, RoomZ, D / 2, DoorZ, wall, steel);
+            WallAlongX("Lab wall S", RoomZ, RoomX, W / 2, wall);
+            Sign("SCIENCE LAB", new Vector3(RoomX - 0.08f, 2.62f, DoorZ), 90f, new Color(0.05f, 0.4f, 0.45f));
+            Box("Glovebox", new Vector3(5.55f, 0.95f, 1.35f), new Vector3(0.75f, 0.7f, 1.0f), white, true);
+            Box("Glovebox window", new Vector3(5.17f, 1.05f, 1.35f), new Vector3(0.02f, 0.45f, 0.8f), Mat(new Color(0.5f, 0.75f, 0.9f), 0.9f, 0f, 0.3f), false);
+            Box("Glovebox stand", new Vector3(5.55f, 0.3f, 1.35f), new Vector3(0.7f, 0.6f, 0.9f), steel, true);
+            Box("Lab ceiling panel", new Vector3(3.8f, H - 0.04f, 2.5f), new Vector3(1.8f, 0.04f, 0.5f), Mat(new Color(0.85f, 0.95f, 1f), 0.2f, 0f, 2.2f), false);
+
+            // hygiene corner of the main habitat (south-east): privacy panel + curtain, toilet, hand-wash station, health scanner
+            Box("Hygiene panel", new Vector3(2.6f, 1.0f, -3.55f), new Vector3(PartT, 2.0f, 1.9f), wall);
+            Pipe("Curtain rail", new Vector3(2.6f, 2.05f, -2.6f), new Vector3(3.9f, 2.05f, -2.6f), 0.02f, steel);
+            Box("Privacy curtain", new Vector3(3.25f, 1.15f, -2.6f), new Vector3(1.3f, 1.8f, 0.02f), Mat(new Color(0.55f, 0.75f, 0.9f), 0.1f, 0f), false);
+            Sign("HYGIENE", new Vector3(3.25f, 2.25f, -2.58f), 180f, new Color(0.2f, 0.45f, 0.75f));
+            Box("Toilet base", new Vector3(3.25f, 0.25f, -4.1f), new Vector3(0.5f, 0.5f, 0.55f), white, true);
+            Cyl("Toilet seat", new Vector3(3.25f, 0.52f, -4.0f), new Vector3(0.45f, 0.03f, 0.42f), wallDark);
+            Box("Toilet tank", new Vector3(3.25f, 0.8f, -4.35f), new Vector3(0.5f, 0.6f, 0.2f), white, false);
+            Pipe("Urine funnel hose", new Vector3(3.0f, 0.75f, -4.3f), new Vector3(2.85f, 0.55f, -3.95f), 0.03f, orange);
+            foreach (float tz in new[] { -3.7f, -4.35f }) Pipe("Thigh bar", new Vector3(2.95f, 0.6f, tz), new Vector3(3.55f, 0.6f, tz), 0.02f, steel);
+            Box("Wash basin", new Vector3(4.3f, 0.85f, -4.25f), new Vector3(0.7f, 0.12f, 0.4f), white, true);
+            Box("Wash cabinet", new Vector3(4.3f, 0.4f, -4.3f), new Vector3(0.7f, 0.8f, 0.35f), steel, true);
+            Box("Mirror", new Vector3(4.3f, 1.55f, -4.47f), new Vector3(0.6f, 0.5f, 0.02f), Mat(new Color(0.75f, 0.8f, 0.85f), 0.95f, 0.9f), false);
+            Box("Wipes dispenser", new Vector3(3.85f, 1.2f, -4.45f), new Vector3(0.2f, 0.25f, 0.06f), Mat(new Color(0.3f, 0.6f, 0.9f), 0.3f, 0f), false);
+            Station("Hygiene", new Vector3(3.8f, 0, -3.5f), 1.0f, new Color(0.5f, 0.8f, 1f),
+                () => "Freshen up (rinseless wash, wet wipes)",
+                () => m.Ui.Toast("Rinseless soap and wet wipes: water is precious up here. The outpost budgets about 4 L per crew-day for hygiene, recycled where possible.", Severity.Info));
+
+            // galley unit in the main habitat (south wall, east of the airlock door)
+            Box("Galley counter", new Vector3(1.95f, 0.45f, -4.2f), new Vector3(1.1f, 0.9f, 0.55f), white, true);
+            Box("Food warmer", new Vector3(1.75f, 1.08f, -4.25f), new Vector3(0.5f, 0.35f, 0.4f), steel, false);
+            Box("Food warmer window", new Vector3(1.75f, 1.08f, -4.04f), new Vector3(0.35f, 0.2f, 0.02f), Mat(new Color(1f, 0.6f, 0.2f), 0.4f, 0f, 1.5f), false);
+            Box("Water dispenser", new Vector3(2.3f, 1.25f, -4.38f), new Vector3(0.3f, 0.6f, 0.2f), Mat(new Color(0.85f, 0.9f, 0.95f), 0.5f, 0.2f), false);
+            Box("Water dispenser light", new Vector3(2.3f, 1.4f, -4.27f), new Vector3(0.12f, 0.05f, 0.02f), glow, false);
+            Station("Galley", new Vector3(1.95f, 0, -3.4f), 0.9f, new Color(1f, 0.8f, 0.4f), () => "Galley: eat and drink",
+                () => m.Ui.Toast("Rehydrated food and water from the dispenser. Water comes from the 40 L store - the same water the oxygen generator splits.", Severity.Info));
+        }
+
         // ── materials / primitives ────────────────────────────────────────────────
         Material Mat(Color c, float smooth = 0.35f, float metal = 0.1f, float emit = 0f)
         {
@@ -319,7 +408,7 @@ namespace Mohakash
             var strap = Mat(new Color(0.20f, 0.30f, 0.55f), 0.2f, 0f);
             for (int i = 0; i < 5; i++)
             {
-                var p = new Vector3(2.3f + (i % 3) * 0.55f, 0.2f + (i / 3) * 0.4f, -D / 2 + 0.38f);
+                var p = new Vector3(2.4f + (i % 3) * 0.55f, 0.2f + (i / 3) * 0.4f, 0.95f);   // science lab stowage, along its south wall
                 Box("Cargo transfer bag", p, new Vector3(0.5f, 0.38f, 0.42f), ctb, i < 3);
                 Box("CTB strap", p + new Vector3(0, 0.0f, 0.215f), new Vector3(0.06f, 0.39f, 0.01f), strap, false);
                 Box("CTB label", p + new Vector3(0.12f, 0.08f, 0.215f), new Vector3(0.14f, 0.08f, 0.012f), white, false);
@@ -411,15 +500,15 @@ namespace Mohakash
             Box("Pillow", new Vector3(-5.3f, 0.66f, 2.7f), new Vector3(0.7f, 0.13f, 0.4f), white, false);
             BuildBlanket(orange, Mat(new Color(0.95f, 0.95f, 0.93f), 0.2f, 0f));
             Box("Bunk locker", new Vector3(-5.78f, 2.1f, 1.9f), new Vector3(0.4f, 0.7f, 2.0f), steel, false);
-            Station("Bunk", new Vector3(-4.3f, 0, 1.9f), 2.1f, new Color(0.6f, 0.7f, 1f),
+            Station("Bunk", new Vector3(-4.2f, 0, 2.0f), 1.4f, new Color(0.6f, 0.7f, 1f),
                 () => m.Model.Resting ? "Wake up" : $"Sleep (fatigue {m.Model.Fatigue:0}%, time runs 4x)", m.ToggleRest);
 
             // ── power & life-support console (north wall) ────────────────────────────
-            Box("Console desk", new Vector3(-1.0f, 0.45f, 3.95f), new Vector3(3.2f, 0.9f, 0.75f), steel);
-            Screen("Screen A", new Vector3(-2.3f, 1.4f, 4.3f), new Vector3(0.95f, 0.55f, 0.05f), new Color(0.3f, 1f, 0.5f), 0);
-            Screen("Screen B", new Vector3(-1.0f, 1.4f, 4.3f), new Vector3(0.95f, 0.55f, 0.05f), new Color(1f, 0.7f, 0.2f), 1);
-            Screen("Screen C", new Vector3(0.3f, 1.4f, 4.3f), new Vector3(0.95f, 0.55f, 0.05f), new Color(0.2f, 0.85f, 1f), 0);
-            Station("Power & life support", new Vector3(-1.0f, 0, 3.0f), 2.5f, new Color(1f, 0.85f, 0.3f),
+            Box("Console desk", new Vector3(0f, 0.45f, 3.95f), new Vector3(2.6f, 0.9f, 0.75f), steel);
+            Screen("Screen A", new Vector3(-0.85f, 1.4f, 4.3f), new Vector3(0.75f, 0.5f, 0.05f), new Color(0.3f, 1f, 0.5f), 0);
+            Screen("Screen B", new Vector3(0f, 1.4f, 4.3f), new Vector3(0.75f, 0.5f, 0.05f), new Color(1f, 0.7f, 0.2f), 1);
+            Screen("Screen C", new Vector3(0.85f, 1.4f, 4.3f), new Vector3(0.75f, 0.5f, 0.05f), new Color(0.2f, 0.85f, 1f), 0);
+            Station("Power & life support", new Vector3(0f, 0, 3.0f), 1.5f, new Color(1f, 0.85f, 0.3f),
                 () => $"Open power & life support (battery {m.Model.Battery:0}, cabin O2 {m.Model.CabinO2:0.0})", m.ToggleSystems);
 
             // ── sample lab (north wall, east) ────────────────────────────────────────
@@ -430,7 +519,7 @@ namespace Mohakash
             Box("Sample tray", new Vector3(3.6f, 0.98f, 3.85f), new Vector3(0.6f, 0.04f, 0.4f), wallDark, false);
             for (int i = 0; i < 3; i++) Prim(PrimitiveType.Sphere, "Sample", new Vector3(3.4f + i * 0.17f, 1.04f, 3.85f), Vector3.one * 0.09f, Mat(new Color(0.55f, 0.50f, 0.45f), 0.1f, 0f), false);
             Screen("Lab screen", new Vector3(4.2f, 1.4f, 4.15f), new Vector3(0.5f, 0.4f, 0.04f), new Color(0.2f, 0.85f, 1f), 1);
-            Station("Sample lab", new Vector3(3.4f, 0, 3.0f), 2.3f, new Color(0.3f, 0.9f, 1f),
+            Station("Sample lab", new Vector3(3.4f, 0, 3.0f), 1.6f, new Color(0.3f, 0.9f, 1f),
                 () => m.Model.SamplesDelivered > m.SamplesAnalyzed ? $"Analyse a regolith sample ({m.Model.SamplesDelivered - m.SamplesAnalyzed} waiting)"
                                                                   : "Sample lab (no samples waiting - collect some outside)", m.AnalyzeSample);
 
@@ -438,13 +527,13 @@ namespace Mohakash
             Box("Scanner body", new Vector3(5.4f, 0.85f, -3.5f), new Vector3(0.7f, 1.7f, 0.9f), white);
             Screen("Scanner screen", new Vector3(5.03f, 1.35f, -3.5f), new Vector3(0.05f, 0.4f, 0.6f), new Color(0.3f, 1f, 0.5f), 0);
             Box("Scanner stripe", new Vector3(5.03f, 0.6f, -3.5f), new Vector3(0.05f, 0.1f, 0.7f), orange, false);
-            Station("Health scan", new Vector3(4.3f, 0, -3.5f), 2.1f, new Color(0.4f, 1f, 0.6f),
+            Station("Health scan", new Vector3(4.4f, 0, -3.4f), 1.3f, new Color(0.4f, 1f, 0.6f),
                 () => $"Health scan (health {m.Model.Health:0}%, fatigue {m.Model.Fatigue:0}%, dose {m.Model.Dose:0.0})", m.HealthScan);
 
             // ── window seat ───────────────────────────────────────────────────────────
             Box("Window seat", new Vector3(5.45f, 0.25f, 3.05f), new Vector3(0.7f, 0.5f, 2.0f), wallDark, false);
-            Box("Seat cushion", new Vector3(5.2f, 0.56f, 0.2f), new Vector3(0.7f, 0.12f, 2.9f), Mat(new Color(0.30f, 0.40f, 0.55f), 0.2f, 0f), false);
-            Station("Window", new Vector3(4.6f, 0, 3.05f), 1.8f, new Color(0.7f, 0.85f, 1f), () => "Look out the window", m.WindowLook);
+            Box("Seat cushion", new Vector3(5.45f, 0.56f, 3.05f), new Vector3(0.7f, 0.12f, 2.0f), Mat(new Color(0.30f, 0.40f, 0.55f), 0.2f, 0f), false);
+            Station("Window", new Vector3(4.6f, 0, 3.05f), 1.5f, new Color(0.7f, 0.85f, 1f), () => "Look out the window", m.WindowLook);
 
             // ── table, stools, props ─────────────────────────────────────────────────
             Box("Table top", new Vector3(0.3f, 0.78f, -0.4f), new Vector3(2.2f, 0.06f, 1.1f), white);
@@ -462,9 +551,11 @@ namespace Mohakash
             for (int i = 0; i < 3; i++)
                 Cyl("O2 tank", new Vector3(-5.45f + i * 0.42f, 0.6f, -4.1f), new Vector3(0.3f, 0.6f, 0.3f), Mat(new Color(0.85f, 0.88f, 0.9f), 0.5f, 0.4f), true);
             // greenhouse shelf (decor)
-            Box("Planter shelf", new Vector3(2.0f, 0.5f, -4.1f), new Vector3(1.6f, 1.0f, 0.5f), steel);
+            Box("Planter shelf", new Vector3(-5.7f, 0.5f, -0.35f), new Vector3(0.5f, 1.0f, 1.6f), steel);
             for (int i = 0; i < 4; i++)
-                Prim(PrimitiveType.Sphere, "Plant", new Vector3(1.5f + i * 0.33f, 1.1f, -4.1f), new Vector3(0.28f, 0.22f, 0.28f), Mat(new Color(0.25f, 0.65f, 0.25f), 0.2f, 0f), false);
+                Prim(PrimitiveType.Sphere, "Plant", new Vector3(-5.7f, 1.1f, -0.85f + i * 0.33f), new Vector3(0.28f, 0.22f, 0.28f), Mat(new Color(0.25f, 0.65f, 0.25f), 0.2f, 0f), false);
+
+            BuildRooms(wall, wallDark, white, steel, orange, cyanGlow, lamp);
 
             // ── detail pass: pipes, vents, conduits, status lights, door lights, moon globe ─────────────────────
             var pipeMat = Mat(new Color(0.72f, 0.74f, 0.78f), 0.6f, 0.8f);
@@ -486,9 +577,9 @@ namespace Mohakash
                 Box("Wall panel light", new Vector3(i * 2.4f, 2.2f, -D / 2 + 0.07f), new Vector3(0.5f, 0.05f, 0.02f), cyanGlow, false);
 
             // status LEDs that blink at different rates
-            Led(new Vector3(-2.3f, 1.05f, 3.95f), new Color(1f, 0.15f, 0.1f), 0.8f, 0.0f);
-            Led(new Vector3(-2.15f, 1.05f, 3.95f), new Color(0.25f, 1f, 0.4f), 1.4f, 0.3f);
-            Led(new Vector3(0.7f, 1.05f, 3.95f), new Color(1f, 0.7f, 0.1f), 0.5f, 0.6f);
+            Led(new Vector3(-1.0f, 1.05f, 3.95f), new Color(1f, 0.15f, 0.1f), 0.8f, 0.0f);
+            Led(new Vector3(-0.85f, 1.05f, 3.95f), new Color(0.25f, 1f, 0.4f), 1.4f, 0.3f);
+            Led(new Vector3(1.0f, 1.05f, 3.95f), new Color(1f, 0.7f, 0.1f), 0.5f, 0.6f);
             Led(new Vector3(-1.2f, 2.2f, -D / 2 + 0.2f), new Color(0.25f, 1f, 0.4f), 0.4f, 0.1f);
             Led(new Vector3(1.2f, 2.2f, -D / 2 + 0.2f), new Color(0.25f, 1f, 0.4f), 0.4f, 0.1f);
             Led(new Vector3(5.03f, 1.75f, -3.5f), new Color(1f, 0.15f, 0.1f), 0.7f, 0.2f);
