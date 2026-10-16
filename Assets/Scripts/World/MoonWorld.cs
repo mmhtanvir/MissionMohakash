@@ -17,7 +17,16 @@ namespace Mohakash
         public Vector3 RoverStart { get; private set; }
         public Vector3 SeisCratePoint { get; private set; }
         public Transform SunDisk, SunCorona, Earth, Stars;
-        public SlidingDoor OuterHatch { get; private set; }
+        public HingedHatch OuterHatch { get; private set; }
+        /// <summary>Where the astronaut stands to press the hatch button (outside, beside the doorway).</summary>
+        public Vector3 HatchPanelPoint { get; private set; }
+        /// <summary>Standing spot inside the airlock recess, and just outside the outer hatch.</summary>
+        public Vector3 AirlockInside { get; private set; }
+        public Vector3 AirlockFront { get; private set; }
+        public Vector3 AirlockInnerPoint { get; private set; }
+        public Vector3 AirlockStairFoot { get; private set; }    // bottom of the stair up to the outer hatch
+        public Vector3 AirlockThreshold { get; private set; }    // top of the stair, in the doorway   // in the inner doorway (fade point to / from the habitat room)
+        public AirlockChamber Chamber { get; private set; }
         public readonly List<Transform> SolarArrays = new List<Transform>();
 
         Transform horizonHaze;
@@ -604,17 +613,29 @@ namespace Mohakash
             var root = new GameObject("Outpost").transform;
             root.SetParent(transform);
 
-            Hab = Spawn("SurfaceHabitat", OnGround(0, 0), Quaternion.identity, 1f, root, "HAB - Surface Habitat Module").transform;   // NASA Artemis-style surface habitat (tools/structures_v2/surface_hab.py)
+            // glTFast mirrors X on import: rotating 180 puts the berthing adapter back on +X (toward the SUI tunnel) and the windows on +X, z = +3.5
+            Hab = Spawn("SurfaceHabitat", OnGround(0, 0), Quaternion.Euler(0, 180, 0), 1f, root, "HAB - Surface Habitat Module").transform;   // NASA Artemis-style surface habitat (tools/structures_v2/surface_hab.py)
             AddBoxCollider(Hab.gameObject, 0.8f);
 
-            var airlock = Spawn("Connector", OnGround(5.6f, 0), Quaternion.Euler(0, 180, 0), 1f, root, "SUI - Suit Station / airlock");
-            if (airlock) airlock.transform.position += Vector3.down * 1.1f;
+            // identity rotation: with glTFast's X mirror the doorway (GLB x = -0.68) faces outward at world x 6.28 and the HAB end
+            // (GLB x = 2.68) docks into the berthing adapter at x 2.92. Raised 0.45 m: chamber floor 0.57 m above the regolith, stair up to it.
+            var airlock = Spawn("Connector", OnGround(5.6f, 0), Quaternion.identity, 1f, root, "SUI - Suit Station / airlock");
+            if (airlock) airlock.transform.position += Vector3.down * 0.65f;
             AirlockPoint = OnGround(8.6f, 0);
             // outer hatch at the end of the airlock tunnel (opens / closes smoothly when going in or out)
-            float hatchY = (airlock ? airlock.transform.position.y : OnGround(5.6f, 0).y - 1.1f) + 2.22f;   // Connector.glb door: local x -0.78, y 2.22, rotated 180
-            OuterHatch = SlidingDoor.Create(root, "Airlock outer hatch", new Vector3(6.47f, hatchY, 0f), Vector3.forward, Vector3.right, 1.3f, 1.7f,
-                SlidingDoor.LitMat(new Color(0.86f, 0.88f, 0.91f), 0.45f, 0.1f), SlidingDoor.LitMat(new Color(0.95f, 0.45f, 0.08f), 0.3f),
-                SlidingDoor.LitMat(new Color(1f, 0.15f, 0.1f), 0.2f, 0f, 2f), SlidingDoor.LitMat(new Color(0.25f, 1f, 0.45f), 0.2f, 0f, 2f));
+            // Connector.glb (rotated 180, lowered 1.1): open doorway at local x -0.68, y 1.22..3.10, recess floor at local y 1.22
+            float conY = airlock ? airlock.transform.position.y : OnGround(5.6f, 0).y - 1.1f;
+            // walk-in airlock chamber inside the tunnel (outer doorway world x 6.28, inner door x 3.15, floor conY + 1.22)
+            Chamber = AirlockChamber.Create(root, new Vector3(4.72f, conY + 1.22f, 0f), Vector3.right);
+            AirlockInside = new Vector3(4.65f, conY + 1.22f, 0f);
+            AirlockInnerPoint = new Vector3(3.35f, conY + 1.22f, 0f);
+            AirlockFront = OnGround(7.9f, 0f);
+            AirlockStairFoot = OnGround(7.35f, 0f);
+            AirlockThreshold = new Vector3(6.1f, conY + 1.22f, 0f);
+            // hinged outer hatch over the doorway (hinge on the +Z side, swings outward), button panel on the -Z side
+            OuterHatch = HingedHatch.Create(root, "Airlock outer hatch", new Vector3(6.36f, conY + 2.16f, 0f), Vector3.right, Vector3.forward, 1.25f, 1.92f,
+                                            new Vector3(0.88f, 0.22f, -0.02f));
+            HatchPanelPoint = new Vector3(6.95f, OnGround(6.95f, -0.55f).y, -0.55f);
 
             if (kit.Has("OGS")) AddBoxCollider(Spawn("HouseLong", OnGround(-11f, -1f), Quaternion.Euler(0, 90, 0), 0.8f, root, "OGS - Oxygen Generator module"), 0.9f);
             if (kit.Has("STO"))

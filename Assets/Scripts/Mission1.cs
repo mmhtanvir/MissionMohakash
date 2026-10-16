@@ -245,28 +245,67 @@ namespace Mohakash
         {
             cinematic = true; SystemsOpen = false; Game.SetCursorFree(false);
             Player.BeginScript();
-            var hatch = World.OuterHatch;
-            if (hatch != null)
+            var hatch = World.OuterHatch; var ch = World.Chamber;
+            if (hatch != null && ch != null)
             {
-                yield return Player.WalkTo(World.OnGround(8.1f, 0f));
-                yield return Player.TurnTo(-90f);
+                // 1. outside, at the astronaut's eye height: walk to the foot of the stair, the hatch unlocks and swings open - and stays open
+                Cam.FollowShot(new Vector3(2.6f, 0f, -0.9f));
+                yield return Player.WalkTo(World.AirlockFront);
+                yield return Player.TurnTo(-90f, 0.5f);
                 yield return hatch.SetOpen(true);
-                yield return Player.WalkTo(World.OnGround(6.2f, 0f));
+                // 2. up the stair and through the open hatch, camera following right behind into the chamber
+                Cam.FollowShot(new Vector3(1.45f, 0f, -0.12f));
+                yield return Player.WalkTo(World.AirlockStairFoot, 1.1f, stop: false);
+                yield return Player.WalkTo(World.AirlockThreshold, 0.9f, stop: false);
+                yield return Player.WalkTo(World.AirlockInside, 1.1f);
+                // 3. only now does the hatch close: turn to watch it, camera moves to the inner-door end looking back
+                Cam.FollowShot(new Vector3(-1.05f, 0f, -0.45f));
+                yield return Player.TurnTo(90f, 0.8f);
                 hatch.Open = false;
                 yield return hatch.Wait();
+                // 4. airlock cycle in the chamber
+                yield return Player.TurnTo(-90f, 0.8f);
+                yield return ch.Repressurize(Player, msg => Ui.Toast(msg, Severity.Info));
+                // 5. inner door opens, step through into the habitat
+                yield return ch.InnerDoor.SetOpen(true);
+                Cam.FollowShot(new Vector3(1.2f, 0f, -0.25f));
+                yield return Player.WalkTo(World.AirlockInnerPoint, 1.1f);
+                yield return Fade(1f, 0.35f);
+                ch.InnerDoor.Open = false; ch.ShowIdle(false);
             }
             Model.EnterHabitat();
             Player.SetIndoors(true, suited: true);
-            Player.Teleport(HabitatInterior.VestibulePoint); Player.BeginScript(); Player.EndScript();   // re-disable the controller after Teleport
+            Player.Teleport(HabitatInterior.DoorwayPoint); Player.BeginScript(); Player.EndScript();   // re-disable the controller after Teleport
             Player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
-            InteriorCamera(180f, 10f);                               // from inside the room, facing the door
-            yield return Interior.AirlockDoor.SetOpen(true);
-            yield return Player.WalkTo(HabitatInterior.InsideDoorPoint);
+            InteriorCamera(0f, 10f);
+            Interior.AirlockDoor.Open = true;
+            Cam.FollowShot(new Vector3(0.8f, 0f, -1.0f), snap: true);           // behind the astronaut, stepping into the room
+            yield return Fade(0f, 0.35f);
+            yield return Player.WalkTo(HabitatInterior.InsideDoorPoint, 1.2f);
             Interior.AirlockDoor.Open = false;
-            Cam.Snap(235f, 8f);                                      // three-quarter view of the suit alcove
+            Cam.EndShot();
+            Cam.Snap(235f, 8f);                                                  // three-quarter view of the suit alcove
             yield return Player.SuitOff(HabitatInterior.DockStand, HabitatInterior.DockYaw, HabitatInterior.HelmetShelf, HabitatInterior.SuitHang);
             Player.EndScript(); cinematic = false;
             Ui.Toast("Inside the habitat. Suit stowed in the alcove. Walk to a station and press E: bunk, lab, console, suit dock, comms, health scan, window.", Severity.Info);
+        }
+
+        // full-screen black fade (only used at the inner airlock door, where the surface airlock joins the habitat interior)
+        UnityEngine.UIElements.VisualElement fade;
+        IEnumerator Fade(float to, float dur)
+        {
+            if (fade == null && Ui != null && Ui.Root != null)
+            {
+                fade = new UnityEngine.UIElements.VisualElement { name = "airlock-fade", pickingMode = UnityEngine.UIElements.PickingMode.Ignore };
+                fade.style.position = UnityEngine.UIElements.Position.Absolute;
+                fade.style.left = 0; fade.style.top = 0; fade.style.right = 0; fade.style.bottom = 0;
+                fade.style.backgroundColor = Color.black; fade.style.opacity = 0f;
+                Ui.Root.Add(fade);
+            }
+            if (fade == null) yield break;
+            float from = fade.resolvedStyle.opacity;
+            for (float t = 0f; t < dur; t += Time.unscaledDeltaTime) { fade.style.opacity = Mathf.Lerp(from, to, t / dur); yield return null; }
+            fade.style.opacity = to;
         }
 
         /// <summary>Old instant switch (scripted tests, or no interior).</summary>
@@ -300,7 +339,41 @@ namespace Mohakash
             if (cinematic) return;
             if (Model.EvaLeft < 0.6f) { Model.ExitHabitat(); Ui?.Toast($"Suit not ready: {Model.EvaLeft:0.0} h. Rest or speed up time while it refills.", Severity.Warning); return; }
             if (Interior == null || Player == null || !Player.gameObject.activeSelf || Player.InBed) { ExitHabitatInstant(); return; }
+            if (!Player.SuitedIndoors)
+            {
+                Ui.Toast("You can't go outside without your EVA suit - there is no air out there. Put it on at the suit alcove next to the airlock (press E there).", Severity.Warning);
+                return;
+            }
             StartCoroutine(ExitRoutine());
+        }
+
+        /// <summary>Suit alcove: put the EVA suit on (step in, helmet on, suit check) or take it off again.</summary>
+        public void SuitUp()
+        {
+            if (cinematic || Player == null || !Model.Inside) return;
+            StartCoroutine(SuitRoutine(!Player.SuitedIndoors));
+        }
+
+        IEnumerator SuitRoutine(bool on)
+        {
+            cinematic = true; SystemsOpen = false; Game.SetCursorFree(false);
+            if (Model.Resting) ToggleRest();
+            Player.BeginScript();
+            Cam.Snap(235f, 8f);                                      // three-quarter view of the alcove
+            if (on)
+            {
+                Ui.Toast("Suiting up: step in through the back hatch, then the helmet locks onto the neck ring.", Severity.Info);
+                yield return Player.SuitOn(HabitatInterior.DockStand, HabitatInterior.DockYaw);
+                Ui.Toast(Model.EvaLeft < 0.6f ? $"Suit on, but it is still refilling ({Model.EvaLeft:0.0} h). Wait or rest before you go out."
+                                              : $"Suit check OK: pressure 29.6 kPa, O2 flowing, comms on. {Model.EvaLeft:0.0} h of EVA. Head to the airlock.", Severity.Good);
+            }
+            else
+            {
+                Player.SetIndoors(true, suited: true);
+                yield return Player.SuitOff(HabitatInterior.DockStand, HabitatInterior.DockYaw, HabitatInterior.HelmetShelf, HabitatInterior.SuitHang);
+                Ui.Toast("Suit stowed in the alcove. It keeps refilling while you are inside.", Severity.Info);
+            }
+            Player.EndScript(); cinematic = false;
         }
 
         IEnumerator ExitRoutine()
@@ -308,25 +381,52 @@ namespace Mohakash
             cinematic = true; SystemsOpen = false; Game.SetCursorFree(false);
             if (Model.Resting) ToggleRest();
             Player.BeginScript();
-            Cam.Snap(235f, 8f);
-            yield return Player.SuitOn(HabitatInterior.DockStand, HabitatInterior.DockYaw);
+            // 1. in the room: walk to the airlock door, it slides open, step into the doorway
+            Cam.FollowShot(new Vector3(0.8f, 0f, 1.25f));
             yield return Player.WalkTo(HabitatInterior.InsideDoorPoint);
             yield return Player.TurnTo(180f);
             yield return Interior.AirlockDoor.SetOpen(true);
-            yield return Player.WalkTo(HabitatInterior.VestibulePoint);
-            yield return Interior.AirlockDoor.SetOpen(false);
-            if (!Model.ExitHabitat()) { Player.EndScript(); cinematic = false; yield break; }
+            yield return Player.WalkTo(HabitatInterior.DoorwayPoint, 1.1f);
+            yield return Fade(1f, 0.35f);
+            Interior.AirlockDoor.Open = false;
+            if (!Model.ExitHabitat()) { Cam.EndShot(); yield return Fade(0f, 0.3f); Player.EndScript(); cinematic = false; yield break; }
             Cam.ClampToTerrain = true; Cam.MaxPitch = 70f;
             Player.SetIndoors(false);
-            Player.Teleport(World.OnGround(6.2f, 0f)); Player.BeginScript(); Player.EndScript();
-            Player.transform.rotation = Quaternion.LookRotation(Vector3.right);
+            var hatch = World.OuterHatch; var ch = World.Chamber;
             Cam.Target = Player.transform; Cam.Distance = 4.4f; Cam.Height = 1.5f; Cam.AutoOrbit = false;
-            Cam.Snap(-90f, 10f);                                     // outside, looking back at the hatch
-            var hatch = World.OuterHatch;
-            if (hatch != null) yield return hatch.SetOpen(true);
-            yield return Player.WalkTo(World.OnGround(World.AirlockPoint.x + 1.8f, World.AirlockPoint.z));
-            if (hatch != null) hatch.Open = false;
+            if (hatch != null && ch != null)
+            {
+                // 2. in the surface airlock chamber, coming through the inner door
+                Player.Teleport(World.AirlockInnerPoint); Player.BeginScript(); Player.EndScript();
+                Player.transform.rotation = Quaternion.LookRotation(Vector3.right);
+                ch.InnerDoor.Open = true; ch.ShowIdle(true);
+                Cam.FollowShot(new Vector3(1.25f, 0f, -0.45f), snap: true);        // ahead of the astronaut, looking back at the inner door
+                yield return Fade(0f, 0.35f);
+                yield return Player.WalkTo(World.AirlockInside, 1.1f);
+                ch.InnerDoor.Open = false;
+                yield return ch.InnerDoor.Wait();
+                // 3. pump down to vacuum
+                yield return ch.Depressurize(msg => Ui.Toast(msg, Severity.Info));
+                // 4. the hatch unlocks, pops and swings open, and stays open while the camera follows the astronaut out and down the stair
+                yield return hatch.SetOpen(true);
+                Cam.FollowShot(new Vector3(-1.3f, 0f, -0.1f));                     // behind the astronaut, out through the doorway
+                yield return Player.WalkTo(World.AirlockThreshold, 1.0f, stop: false);
+                yield return Player.WalkTo(World.AirlockStairFoot, 0.9f, stop: false);
+                yield return Player.WalkTo(World.OnGround(World.AirlockPoint.x + 1.8f, World.AirlockPoint.z));
+                // 5. outside: swing round to watch the hatch close behind
+                Cam.FollowShot(new Vector3(1.6f, 0f, -2.2f));
+                yield return Player.TurnTo(-110f, 0.8f);
+                hatch.Open = false;
+                yield return hatch.Wait();
+                ch.ShowIdle(false);
+            }
+            else
+            {
+                Player.Teleport(World.AirlockPoint + new Vector3(1.8f, 0.3f, 0f));
+                yield return Fade(0f, 0.35f);
+            }
             SetSpeed(1);
+            Cam.EndShot();
             Player.EndScript(); cinematic = false;
         }
 

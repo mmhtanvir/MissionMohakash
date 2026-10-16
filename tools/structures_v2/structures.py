@@ -116,30 +116,70 @@ def build_dome():
 
 # =====================================================================  SUI airlock  (Connector.glb)
 def build_connector():
-    m = mk('SUI'); cx, cy, L, Hh, W = 1.0, 2.325, 3.36, 2.1, 2.14
-    m.box((L, Hh - 0.2, W - 0.1), (cx, cy + 0.0, 0), HULL, r=0.32)
-    m.box((L - 0.3, 0.14, W - 0.5), (cx, cy + Hh / 2 - 0.05, 0), HULL2, r=0.05)
-    for x in (-0.25, 0.55, 1.45, 2.25):
-        m.box((0.10, Hh - 0.1, W + 0.04), (x, cy, 0), DARK, r=0.03)
-    for s in (-1, 1):
-        m.box((L - 0.2, 0.06, 0.06), (cx, 1.62, s * (W / 2 - 0.02)), LED_B)
-        m.cyl(0.25, 0.08, (cx + 0.2, cy + 0.15, s * (W / 2 - 0.03)), DARK, axis='z', seg=24)
-        m.cyl(0.19, 0.09, (cx + 0.2, cy + 0.15, s * (W / 2 - 0.02)), GLASSE, axis='z', seg=24)
-    # door end (-X): frame + glowing hatch
-    m.box((0.14, 1.70, 1.30), (-0.70, 2.22, 0), DARK, r=0.04)
-    m.box((0.04, 1.45, 1.05), (-0.78, 2.22, 0), GLASSE)
-    m.box((0.18, 0.12, 1.5), (-0.72, 3.12, 0), YELLOW)
-    m.box((0.25, 0.1, 1.6), (-0.82, 3.2, 0), DARK, r=0.03)
-    m.box((0.08, 0.1, 0.35), (-0.78, 1.62, 0.75), LED_A)
-    # step plates / skirt / feet
-    m.box((L - 0.1, 0.12, W - 0.2), (cx, 1.16, 0), DARK)
-    m.box((0.9, 0.09, 1.5), (-1.0, 1.13, 0), STEEL, r=0.02)
-    for x in (-0.3, 2.3):
-        for s in (-1, 1): m.box((0.3, 0.5, 0.3), (x, 1.3, s * 0.85), DARK, r=0.04)
-    # roof gear
-    m.box((0.7, 0.3, 0.5), (0.4, cy + Hh / 2 + 0.1, 0.3), DARK, r=0.04)
-    m.cyl(0.22, 0.28, (1.7, cy + Hh / 2 + 0.12, -0.35), STEEL, seg=16)
-    m.sph(0.07, (-0.55, cy + Hh / 2 + 0.1, -0.7), LED_A, seg=8, rings=5)
+    """SUI airlock: a walk-in chamber. Outer doorway at local x=-0.68 (the hinged outer hatch is a runtime object,
+    HingedHatch.cs), inner doorway at local x=2.45 toward the HAB (runtime SlidingDoor). Interior floor y=1.22,
+    ceiling y=3.45, half-width 0.95. Effects (vents, beacon, pressure panel) are added at runtime by AirlockChamber.cs."""
+    m = mk('SUI')
+    x0, x1, xi = -0.68, 2.68, 2.45         # outer end, HAB end, inner door plane
+    yf, yc, hw, t = 1.22, 3.45, 0.95, 0.12  # floor, ceiling, interior half-width, wall thickness
+    dz, dy1 = 0.55, 3.10                   # doorway half-width / top
+    L = x1 - x0; cx = (x0 + x1) / 2
+    # outer shell: side walls, roof, floor slab (each a slab so the inside faces are real walls)
+    for s_ in (-1, 1): m.box((L, yc + t - (yf - 0.12), t), (cx, (yc + t + yf - 0.12) / 2, s_ * (hw + t / 2)), HULL, r=0.04)
+    m.box((L, t, 2 * hw + 2 * t), (cx, yc + t / 2, 0), HULL, r=0.05)
+    m.box((L, 0.12, 2 * hw + 2 * t), (cx, yf - 0.06, 0), DARK)
+    # end walls with doorways
+    for xe, name in ((x0, 'outer'), (xi, 'inner')):
+        for s_ in (-1, 1): m.box((t, yc - yf, hw - dz), (xe, (yf + yc) / 2, s_ * (dz + (hw - dz) / 2)), HULL, r=0.02)
+        m.box((t, yc - dy1, 2 * dz), (xe, (dy1 + yc) / 2, 0), HULL, r=0.02)
+        m.box((t + 0.06, 0.08, 2 * dz + 0.16), (xe, dy1 + 0.04, 0), DARK)
+        for s_ in (-1, 1): m.box((t + 0.06, dy1 - yf, 0.08), (xe, (yf + dy1) / 2, s_ * (dz + 0.04)), DARK)
+    m.box((x1 - xi, yc - yf, 2 * hw), ((x1 + xi) / 2, (yf + yc) / 2, 0), DARK)          # behind the inner door: berthing tunnel (dark)
+    # interior: wall panels, floor grille, ceiling light strips, handrails, vent grilles, pipes
+    xa, xb = x0 + t, xi - t / 2
+    for s_ in (-1, 1):
+        m.box((xb - xa, yc - yf - 0.3, 0.02), ((xa + xb) / 2, (yf + yc) / 2, s_ * (hw - 0.01)), WHITEP)
+        m.box((xb - xa, 0.04, 0.04), ((xa + xb) / 2, yf + 0.95, s_ * (hw - 0.06)), RAILY)              # handrail
+        for xh in np.linspace(xa + 0.3, xb - 0.3, 3): m.box((0.03, 0.03, 0.06), (xh, yf + 0.95, s_ * (hw - 0.03)), STEEL)
+        m.box((1.1, 0.5, 0.03), ((xa + xb) / 2, yf + 1.15, s_ * (hw - 0.03)), STEEL)                 # vent grille
+        for k in range(5): m.box((1.05, 0.02, 0.035), ((xa + xb) / 2, yf + 0.95 + k * 0.1, s_ * (hw - 0.04)), DARK)
+        m.cyl(0.04, xb - xa, ((xa + xb) / 2, yc - 0.12, s_ * (hw - 0.1)), STEEL, axis='x', seg=10)   # piping along the ceiling edge
+    m.box((xb - xa - 0.1, 0.02, 2 * hw - 0.3), ((xa + xb) / 2, yf + 0.01, 0), STEEL)                  # floor grille
+    for k in range(9): m.box((0.03, 0.025, 2 * hw - 0.35), (xa + 0.2 + k * (xb - xa - 0.4) / 8, yf + 0.03, 0), DARK)
+    for xl in (xa + 0.55, xb - 0.55): m.box((0.7, 0.03, 0.3), (xl, yc - 0.02, 0), LAMP)
+    m.box((0.6, 0.04, 0.6), ((xa + xb) / 2, yc - 0.03, 0), STEEL)                                      # air shower nozzle plate
+    # outside: frame stripe, ribs, portholes, LED strips, step plate, feet, roof gear
+    m.box((0.18, 0.1, 1.5), (x0 - 0.06, dy1 + 0.17, 0), YELLOW)
+    for x in (0.55, 1.45, 2.25):                                   # structural hoops OUTSIDE the shell (the chamber stays clear)
+        ow = hw + t + 0.04
+        for s_ in (-1, 1): m.box((0.10, yc - yf + 0.5, 0.06), (x, (yf + yc) / 2, s_ * ow), DARK, r=0.02)
+        m.box((0.10, 0.06, 2 * ow + 0.06), (x, yc + t + 0.03, 0), DARK, r=0.02)
+    for s_ in (-1, 1):
+        m.box((L - 0.4, 0.06, 0.06), (cx, 1.62, s_ * (hw + t + 0.01)), LED_B)
+        m.cyl(0.25, 0.08, (1.0, yf + 1.3, s_ * (hw + t + 0.01)), DARK, axis='z', seg=24)
+        m.cyl(0.19, 0.09, (1.0, yf + 1.3, s_ * (hw + t + 0.02)), GLASSE, axis='z', seg=24)
+    m.box((L - 0.1, 0.12, 2 * hw + 2 * t - 0.1), (cx, 1.10, 0), DARK)
+    # the chamber is raised 0.57 m (ground = local y 0.65 once placed): stair with 3 rises up to the doorway + handrails
+    g = 0.65; rise = (yf - g) / 3
+    for k in range(2):
+        top = yf - rise * (k + 1); xa_, xb_ = x0 - 0.02 - 0.32 * k, x0 - 0.02 - 0.32 * (k + 1)
+        m.box((xa_ - xb_, top - (g - 0.3), 1.9), ((xa_ + xb_) / 2, (top + g - 0.3) / 2, 0), DARK)
+        m.box((xa_ - xb_, 0.03, 1.9), ((xa_ + xb_) / 2, top + 0.015, 0), STEEL)
+        m.box((0.04, 0.035, 1.9), (xb_ + 0.02, top + 0.02, 0), YELLOW)                          # nosing stripe
+    xs0, xs1 = x0 - 0.02, x0 - 0.02 - 0.64 - 0.3
+    for s_ in (-1, 1):
+        zr = s_ * 0.98                                             # rails outside the hatch's swing (it opens over z 0.63..0.88)
+        for xp, yp in ((xs0 - 0.05, yf), (xs1 + 0.1, g)):
+            m.between((xp, yp - 0.05, zr), (xp, yp + 0.95, zr), 0.025, RAILY, seg=8)
+        m.between((xs0 - 0.05, yf + 0.95, zr), (xs1 + 0.1, g + 0.95, zr), 0.025, RAILY, seg=8)
+        m.between((xs0 - 0.05, yf + 0.5, zr), (xs1 + 0.1, g + 0.5, zr), 0.018, RAILY, seg=8)
+    for x in (-0.3, 1.1, 2.3):                                     # support legs from the floor slab down to the regolith
+        for s_ in (-1, 1):
+            m.box((0.16, 1.10 - g + 0.25, 0.16), (x, (1.10 + g - 0.25) / 2, s_ * 0.8), STEEL, r=0.03)
+            m.box((0.4, 0.06, 0.4), (x, g + 0.02, s_ * 0.8), DARK)
+    m.box((0.7, 0.3, 0.5), (1.0, yc + t + 0.15, 0.3), DARK, r=0.04)
+    m.cyl(0.22, 0.28, (1.9, yc + t + 0.14, -0.35), STEEL, seg=16)
+    m.sph(0.07, (-0.55, yc + t + 0.12, -0.7), LED_A, seg=8, rings=5)
     return asset('SUI_Connector', m, 'SUI')
 
 # =====================================================================  OGS  (HouseLong.glb)

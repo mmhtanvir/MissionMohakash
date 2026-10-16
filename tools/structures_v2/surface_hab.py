@@ -53,12 +53,13 @@ def build_surface_hab():
         m.between((x, y, -L / 2 + 0.4), (x, y, L / 2 - 0.4), 0.025, RAILY, seg=8)
         for z in np.linspace(-L / 2 + 0.6, L / 2 - 0.6, 6):
             m.between(((R - 0.02) * math.cos(a), CY + (R - 0.02) * math.sin(a), z), (x, y, z), 0.018, RAILY, seg=6)
-    # berthing adapter on +X for the SUI airlock tunnel (tunnel end at x = 2.92, centre y ~1.25)
-    m.cyl(1.05, 1.9, (2.0, 1.25, 0), MLI, axis='x', seg=36)
-    m.torus(1.08, 0.07, (2.92, 1.25, 0), STEEL, axis='x', seg=40, tube=6)
-    m.torus(1.08, 0.07, (1.35, 1.25, 0), STEEL, axis='x', seg=40, tube=6)
-    # windows on +X at z = -3.5 (portal view) and two on -X, each with a dark frame and warm cabin glow
-    for (sx, z, y) in ((1, -3.5, 2.55), (1, -2.6, 2.55), (-1, -1.5, 2.9), (-1, 1.5, 2.9)):
+    # berthing adapter on +X for the SUI airlock tunnel (tunnel end at x = 2.92)
+    # (the SUI tunnel is raised: its interior runs y 0.57..2.80 at x = 2.92, so the adapter is centred at y 1.70)
+    m.cyl(1.18, 1.6, (2.15, 1.70, 0), MLI, axis='x', seg=36)
+    m.torus(1.21, 0.07, (2.92, 1.70, 0), STEEL, axis='x', seg=40, tube=6)
+    m.torus(1.21, 0.07, (1.65, 1.70, 0), STEEL, axis='x', seg=40, tube=6)
+    # two windows on +X (the interior has the same two portholes), dark frame and warm cabin glow
+    for (sx, z, y) in ((1, -3.5, 2.55), (1, -2.6, 2.55)):          # same two portholes inside (HabitatInterior.PortholeZ; z flips to +3.5/+2.6 as placed)
         dy = y - CY; xs = sx * math.sqrt(R * R - dy * dy); ang = math.degrees(math.atan2(dy, abs(xs)))
         rot = (0, 0, sx * ang)
         m.cyl(0.30, 0.10, (xs + sx * 0.02, y, z), DARK, axis='x', seg=28, rot=rot)

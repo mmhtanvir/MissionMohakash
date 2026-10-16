@@ -1,3 +1,4 @@
+using System.Collections;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -150,13 +151,18 @@ namespace Mohakash
 
         public static Vector3 SpawnPoint => Origin + new Vector3(0f, 0.15f, -3.0f);
         // airlock + suit dock choreography points (feet on the floor, y = 0)
-        public static Vector3 VestibulePoint => Origin + new Vector3(0f, 0f, -5.8f);     // inside the airlock chamber, behind the inner door
+        public static Vector3 VestibulePoint => Origin + new Vector3(0f, 0f, -6.3f);     // inside the airlock chamber, behind the inner door
         public static Vector3 InsideDoorPoint => Origin + new Vector3(0f, 0f, -3.4f);    // just inside the room, in front of the door
+        public static Vector3 DoorwayPoint => Origin + new Vector3(0f, 0f, -4.45f);      // standing in the doorway (fade point to / from the surface airlock)
         public static Vector3 DockStand => Origin + new Vector3(-3.9f, 0f, -3.05f);      // in front of the open suit alcove
         public static float DockYaw => 180f;                                              // facing the alcove (-Z)
         public static Vector3 SuitHang => Origin + new Vector3(-3.9f, 0f, -4.12f);       // where the empty suit stands in the alcove
         public static Vector3 HelmetShelf => Origin + new Vector3(-3.9f, 1.98f, -4.18f); // helmet pivot on the alcove shelf
         public SlidingDoor AirlockDoor { get; private set; }
+        static readonly float[] PortholeZ = { 3.5f, 2.6f };   // same places as the HAB's windows outside
+        const float PortholeY = 1.65f;
+        const float VestibuleZ = -D / 2 - 0.3f - 1.4f;
+
         public const float W = 12f, D = 9f, H = 3.4f;
 
         Mission1 m;
@@ -266,16 +272,20 @@ namespace Mohakash
             Box("Wall W", new Vector3(-W / 2 - 0.15f, H / 2, 0), new Vector3(0.3f, H, D), wall);
             // east wall with a big window (z -1.8..2.2, y 0.9..2.5)
             float ex = W / 2 + 0.15f;
-            Box("Wall E low", new Vector3(ex, 0.45f, 0), new Vector3(0.3f, 0.9f, D), wall);
-            Box("Wall E high", new Vector3(ex, (2.5f + H) / 2, 0), new Vector3(0.3f, H - 2.5f, D), wall);
-            Box("Wall E front", new Vector3(ex, 1.7f, -3.15f), new Vector3(0.3f, 1.6f, 2.7f), wall);
-            Box("Wall E back", new Vector3(ex, 1.7f, 3.35f), new Vector3(0.3f, 1.6f, 2.3f), wall);
-            Box("Window sill", new Vector3(W / 2 - 0.1f, 0.92f, 0.2f), new Vector3(0.5f, 0.06f, 4.2f), steel, false);
-            Box("Frame top", new Vector3(W / 2, 2.52f, 0.2f), new Vector3(0.2f, 0.06f, 4.1f), steel, false);
-            Box("Frame L", new Vector3(W / 2, 1.7f, -1.8f), new Vector3(0.2f, 1.6f, 0.06f), steel, false);
-            Box("Frame R", new Vector3(W / 2, 1.7f, 2.2f), new Vector3(0.2f, 1.6f, 0.06f), steel, false);
+            Box("Wall E", new Vector3(ex, H / 2, 0), new Vector3(0.3f, H, D), wall);
             // the opening shows the real lunar surface outside the HAB (portal camera, see HabitatWindow)
-            HabitatWindow.Create(transform, Origin + new Vector3(W / 2 + 0.05f, 1.71f, 0.2f), 4.0f, 1.6f, m.World, () => m.Model != null && m.Model.Inside, new Material(sh));
+            // two round portholes, matching the HAB's two windows outside (+X side, z = +3.5 and +2.6, 2.55 m above the regolith;
+            // cabin floor ~0.9 m up, so 1.65 m here). Dark frame ring like the outside, glass = live portal view from that window.
+            var frame = Mat(new Color(0.12f, 0.13f, 0.16f), 0.4f, 0.4f);
+            foreach (float wz in PortholeZ)
+            {
+                var f = Prim(PrimitiveType.Cylinder, "Porthole frame", new Vector3(W / 2 - 0.02f, PortholeY, wz), new Vector3(0.6f, 0.03f, 0.6f), frame, false);
+                f.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                var r = Prim(PrimitiveType.Cylinder, "Porthole rim", new Vector3(W / 2 - 0.035f, PortholeY, wz), new Vector3(0.5f, 0.012f, 0.5f), steel, false);
+                r.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                HabitatWindow.Create(transform, Origin + new Vector3(W / 2 - 0.05f, PortholeY, wz), 0.44f, 0.44f, m.World, () => m.Model != null && m.Model.Inside,
+                                     new Material(sh), 2.55f, wz, round: true);
+            }
 
             // wall ribs + dark skirting for depth
             for (int i = -1; i <= 1; i++)
@@ -334,22 +344,30 @@ namespace Mohakash
             AirlockDoor = SlidingDoor.Create(transform, "Airlock inner door", Origin + new Vector3(0, 1.25f, -D / 2 - 0.12f), Vector3.right, Vector3.forward,
                                              2.0f, 2.5f, wallDark, steel, Mat(new Color(1f, 0.15f, 0.1f), 0.2f, 0f, 2.0f), greenGlow);
             // airlock chamber (vestibule) behind it, with the outer hatch at the far end
-            float vz = -D / 2 - 0.3f - 1.1f;
-            Box("Airlock floor", new Vector3(0, -0.15f, vz), new Vector3(2.9f, 0.3f, 2.2f), floor);
-            Box("Airlock ceiling", new Vector3(0, 2.85f, vz), new Vector3(2.9f, 0.3f, 2.2f), wall, true, 2);
-            Box("Airlock wall W", new Vector3(-1.45f, 1.35f, vz), new Vector3(0.3f, 2.7f, 2.2f), wall);
-            Box("Airlock wall E", new Vector3(1.45f, 1.35f, vz), new Vector3(0.3f, 2.7f, 2.2f), wall);
-            Box("Airlock outer wall", new Vector3(0, 1.35f, vz - 1.25f), new Vector3(2.9f, 2.7f, 0.3f), wall);
-            Box("Outer hatch", new Vector3(0, 1.1f, vz - 1.09f), new Vector3(1.1f, 1.9f, 0.06f), wallDark, false);
-            Box("Outer hatch wheel", new Vector3(0, 1.15f, vz - 1.05f), new Vector3(0.35f, 0.35f, 0.04f), steel, false);
+            // airlock chamber (vestibule) behind it: 2.8 m deep, outer hatch at the far end, vents + air shower for the cycle
+            float vz = VestibuleZ, vd = 2.8f;
+            Box("Airlock floor", new Vector3(0, -0.15f, vz), new Vector3(2.9f, 0.3f, vd), floor);
+            Box("Airlock ceiling", new Vector3(0, 2.85f, vz), new Vector3(2.9f, 0.3f, vd), wall, true, 2);
+            Box("Airlock wall W", new Vector3(-1.45f, 1.35f, vz), new Vector3(0.3f, 2.7f, vd), wall);
+            Box("Airlock wall E", new Vector3(1.45f, 1.35f, vz), new Vector3(0.3f, 2.7f, vd), wall);
+            Box("Airlock outer wall", new Vector3(0, 1.35f, vz - vd / 2 - 0.15f), new Vector3(2.9f, 2.7f, 0.3f), wall);
+            Box("Outer hatch", new Vector3(0, 1.1f, vz - vd / 2 + 0.01f), new Vector3(1.1f, 1.9f, 0.06f), wallDark, false);
+            Box("Outer hatch wheel", new Vector3(0, 1.15f, vz - vd / 2 + 0.05f), new Vector3(0.35f, 0.35f, 0.04f), steel, false);
             Box("Airlock light", new Vector3(0, 2.68f, vz), new Vector3(0.9f, 0.04f, 0.25f), lamp, false);
-            Box("Airlock floor grille", new Vector3(0, 0.012f, vz), new Vector3(1.6f, 0.02f, 1.6f), steel, false);
+            Box("Airlock floor grille", new Vector3(0, 0.012f, vz), new Vector3(1.6f, 0.02f, 2.2f), steel, false);
+            for (int sd = -1; sd <= 1; sd += 2)
+            {
+                Box("Air vent", new Vector3(sd * 1.29f, 1.2f, vz), new Vector3(0.03f, 0.5f, 1.2f), steel, false);
+                for (int k = 0; k < 5; k++) Box("Vent slat", new Vector3(sd * 1.27f, 1.0f + k * 0.1f, vz), new Vector3(0.02f, 0.02f, 1.15f), wallDark, false);
+            }
+            Box("Air shower", new Vector3(0, 2.66f, vz + 0.6f), new Vector3(0.7f, 0.05f, 0.7f), steel, false);
             var vl = new GameObject("Airlock lamp").AddComponent<Light>();
             vl.transform.SetParent(transform, false); vl.transform.localPosition = new Vector3(0, 2.4f, vz);
-            vl.type = LightType.Point; vl.range = 3.5f; vl.intensity = 2.2f; vl.color = new Color(0.9f, 0.95f, 1f); vl.shadows = LightShadows.None;
+            vl.type = LightType.Point; vl.range = 4.0f; vl.intensity = 2.0f; vl.color = new Color(0.9f, 0.95f, 1f); vl.shadows = LightShadows.None;
             Box("Hazard strip", new Vector3(0, 0.012f, -D / 2 + 0.55f), new Vector3(2.4f, 0.02f, 0.35f), amberGlow, false);
             Station("Airlock door", new Vector3(0, 0, -3.5f), 2.2f, new Color(0.3f, 1f, 0.5f),
-                () => m.Model.EvaLeft < 0.6f ? $"Airlock: suit still refilling ({m.Model.EvaLeft:0.0} h) - wait or rest" : $"Go outside (EVA suit ready: {m.Model.EvaLeft:0.0} h)",
+                () => m.Player != null && !m.Player.SuitedIndoors ? "Airlock: put on your EVA suit first (suit alcove, left)"
+                    : m.Model.EvaLeft < 0.6f ? $"Airlock: suit still refilling ({m.Model.EvaLeft:0.0} h) - wait or rest" : $"Go outside (EVA suit ready: {m.Model.EvaLeft:0.0} h)",
                 m.ExitHabitat);
 
             // ── suit dock (south wall, west) ─────────────────────────────────────────
@@ -370,7 +388,10 @@ namespace Mohakash
                 Box("Locker stripe", new Vector3(x, 1.5f, -D / 2 + 0.56f), new Vector3(0.9f, 0.1f, 0.02f), orange, false);
                 Box("Locker light", new Vector3(x, 2.0f, -D / 2 + 0.57f), new Vector3(0.3f, 0.08f, 0.02f), greenGlow, false);
             }
-            Station("Suit dock", new Vector3(-3.35f, 0, -3.3f), 2.1f, new Color(1f, 0.7f, 0.3f),
+            Station("EVA suit", new Vector3(-3.9f, 0, -3.2f), 1.25f, new Color(1f, 0.55f, 0.15f),
+                () => m.Player != null && m.Player.SuitedIndoors ? "Take off EVA suit (stow it in the alcove)" : "Put on EVA suit (needed to go outside)",
+                m.SuitUp);
+            Station("Suit dock", new Vector3(-2.75f, 0, -3.4f), 1.1f, new Color(1f, 0.7f, 0.3f),
                 () => m.Model.Spares > 0 && m.Model.SuitIntegrity < 100f ? $"Repair suit with a spare kit (integrity {m.Model.SuitIntegrity:0}%, {m.Model.Spares} spare)"
                                                                          : $"Suit status: {m.Model.EvaLeft:0.0} h EVA, integrity {m.Model.SuitIntegrity:0}%",
                 m.SuitDockUse);
@@ -421,9 +442,9 @@ namespace Mohakash
                 () => $"Health scan (health {m.Model.Health:0}%, fatigue {m.Model.Fatigue:0}%, dose {m.Model.Dose:0.0})", m.HealthScan);
 
             // ── window seat ───────────────────────────────────────────────────────────
-            Box("Window seat", new Vector3(5.2f, 0.25f, 0.2f), new Vector3(0.8f, 0.5f, 3.0f), wallDark, false);
+            Box("Window seat", new Vector3(5.45f, 0.25f, 3.05f), new Vector3(0.7f, 0.5f, 2.0f), wallDark, false);
             Box("Seat cushion", new Vector3(5.2f, 0.56f, 0.2f), new Vector3(0.7f, 0.12f, 2.9f), Mat(new Color(0.30f, 0.40f, 0.55f), 0.2f, 0f), false);
-            Station("Window", new Vector3(4.2f, 0, 0.2f), 2.4f, new Color(0.7f, 0.85f, 1f), () => "Look out the window", m.WindowLook);
+            Station("Window", new Vector3(4.6f, 0, 3.05f), 1.8f, new Color(0.7f, 0.85f, 1f), () => "Look out the window", m.WindowLook);
 
             // ── table, stools, props ─────────────────────────────────────────────────
             Box("Table top", new Vector3(0.3f, 0.78f, -0.4f), new Vector3(2.2f, 0.06f, 1.1f), white);
@@ -437,7 +458,7 @@ namespace Mohakash
 
             // storage corner (north-east): crates + gas tanks
             for (int i = 0; i < 3; i++)
-                MoonWorld.Spawn("PickupCrate", Origin + new Vector3(5.2f - (i % 2) * 0.9f, 0.4f + (i / 2) * 0.8f, 3.7f - (i % 2) * 0.2f), Quaternion.Euler(0, i * 15f, 0), 0.8f, transform, "Crate");
+                MoonWorld.Spawn("PickupCrate", Origin + new Vector3(5.2f - (i % 2) * 0.9f, 0.4f + (i / 2) * 0.8f, -0.6f - (i % 2) * 0.2f), Quaternion.Euler(0, i * 15f, 0), 0.8f, transform, "Crate");
             for (int i = 0; i < 3; i++)
                 Cyl("O2 tank", new Vector3(-5.45f + i * 0.42f, 0.6f, -4.1f), new Vector3(0.3f, 0.6f, 0.3f), Mat(new Color(0.85f, 0.88f, 0.9f), 0.5f, 0.4f), true);
             // greenhouse shelf (decor)

@@ -449,6 +449,8 @@ namespace Mohakash
         GameObject suitShell;               // the empty suit standing in the alcove while you are inside
         public const float HelmetGripAt = 0.8f, HelmetClipLen = 2.6f;   // tools/crew_v3/suit_clips.py
         public bool SuitStored => suitShell != null;
+        /// <summary>Inside the habitat and wearing the EVA suit (put on at the alcove; needed to go outside).</summary>
+        public bool SuitedIndoors => Indoors && suitedIndoors;
 
         public void BeginScript() { scripted++; if (cc) cc.enabled = false; horizVel = Vector3.zero; velocity = Vector3.zero; }
         public void EndScript()
@@ -503,7 +505,8 @@ namespace Mohakash
             rot = transform.rotation;
         }
 
-        public IEnumerator WalkTo(Vector3 p, float speed = 1.3f, bool backwards = false)
+        /// <param name="stop">false = keep walking into the next WalkTo (multi-point paths, e.g. up a stair)</param>
+        public IEnumerator WalkTo(Vector3 p, float speed = 1.3f, bool backwards = false, bool stop = true)
         {
             if (cc) cc.enabled = false;
             var rig = Rig; Vector3 a = transform.position;
@@ -517,7 +520,23 @@ namespace Mohakash
                 yield return null;
             }
             transform.position = p; transform.rotation = r1;
-            rig?.Play("Idle", 0.2f);
+            if (stop) rig?.Play("Idle", 0.2f);
+        }
+
+        /// <summary>Press a button / touch a panel in front of you (Interact clip), during a scripted sequence.</summary>
+        public IEnumerator Press(float hold = 0.9f)
+        {
+            Rig?.Play("Interact", 0.15f, 1f, true);
+            yield return new WaitForSeconds(hold);
+        }
+
+        /// <summary>Turn on the spot by 'degrees' (any amount, e.g. a full 360 under the airlock air shower).</summary>
+        public IEnumerator Spin(float degrees, float dur)
+        {
+            Quaternion r0 = transform.rotation;
+            Rig?.Play("Idle", 0.2f);
+            for (float t = 0f; t < dur; t += Time.deltaTime) { transform.rotation = r0 * Quaternion.Euler(0f, degrees * Smooth(0f, dur, t), 0f); yield return null; }
+            transform.rotation = r0 * Quaternion.Euler(0f, degrees, 0f);
         }
 
         public IEnumerator TurnTo(float yaw, float dur = 0.4f)
@@ -585,16 +604,24 @@ namespace Mohakash
         /// <summary>Going out: step into the suit as it slides out of the alcove, take the helmet from the shelf and put it on.</summary>
         public IEnumerator SuitOn(Vector3 stand, float yaw)
         {
-            Vector3 back = stand - Quaternion.Euler(0f, yaw, 0f) * Vector3.forward * 0.75f;
+            // walk straight up to the alcove (no stepping back): stop one short step in front of the stand point, facing it
+            Vector3 fwd = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+            Vector3 approach = stand - fwd * 0.4f;
             if (held) held.SetActive(false);
-            yield return WalkTo(back);
-            yield return TurnTo(yaw);
-            Vector3 a = transform.position, s0 = suitShell ? suitShell.transform.position : stand;
-            Rig?.Play("Walk", 0.15f, 1f, true);
-            for (float u = 0f; u < 1.0f; u += Time.deltaTime)
+            if (Flat(approach - transform.position).magnitude > 0.12f) yield return WalkTo(approach);
+            yield return TurnTo(yaw, 0.35f);
+            // the suit slides out of the alcove to meet you, then one step forward into its back hatch
+            Vector3 s0 = suitShell ? suitShell.transform.position : stand;
+            for (float u = 0f; u < 0.7f; u += Time.deltaTime)
             {
-                transform.position = Vector3.Lerp(a, stand, u);
-                if (suitShell) suitShell.transform.position = Vector3.Lerp(s0, stand, Smooth(0f, 0.85f, u));
+                if (suitShell) suitShell.transform.position = Vector3.Lerp(s0, stand, Smooth(0f, 0.7f, u));
+                yield return null;
+            }
+            Vector3 a = transform.position;
+            Rig?.Play("Walk", 0.15f, 0.8f, true);
+            for (float u = 0f; u < 0.55f; u += Time.deltaTime)
+            {
+                transform.position = Vector3.Lerp(a, stand, Smooth(0f, 0.55f, u));
                 yield return null;
             }
             transform.position = stand;
@@ -628,6 +655,9 @@ namespace Mohakash
                 yield return null;
             }
             if (!seated) { ReattachHelmet(); ShowCasualHead(false); }
+            // suit check: glance at the wrist panel (pressure, O2 flow, comms)
+            evaRig.Play("Interact", 0.2f, 1f, true);
+            yield return new WaitForSeconds(Mathf.Max(1.2f, evaRig.Length("Interact") - 0.1f));
             evaRig.Play("Idle", 0.25f);
             if (held) { held.SetActive(true); AttachHeldToHands(); }
         }
