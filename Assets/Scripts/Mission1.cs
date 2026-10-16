@@ -224,7 +224,53 @@ namespace Mohakash
 
         // ------------------------------------------------------------------ Habitat
 
+        // Going in / out is a short sequence: outer hatch -> airlock tunnel -> inner door -> suit alcove (suit off), and back.
+        bool cinematic;
+        public bool InCinematic => cinematic;
+
         void EnterHabitat()
+        {
+            if (cinematic) return;
+            if (Interior == null || Player == null || !Player.gameObject.activeSelf) { EnterHabitatInstant(); return; }
+            StartCoroutine(EnterRoutine());
+        }
+
+        void InteriorCamera(float yaw, float pitch)
+        {
+            Cam.Target = Player.transform; Cam.AutoOrbit = false; Cam.Distance = 2.9f; Cam.Height = 1.45f;
+            Cam.ClampToTerrain = false; Cam.MaxPitch = 36f; Cam.Snap(yaw, pitch);
+        }
+
+        IEnumerator EnterRoutine()
+        {
+            cinematic = true; SystemsOpen = false; Game.SetCursorFree(false);
+            Player.BeginScript();
+            var hatch = World.OuterHatch;
+            if (hatch != null)
+            {
+                yield return Player.WalkTo(World.OnGround(8.1f, 0f));
+                yield return Player.TurnTo(-90f);
+                yield return hatch.SetOpen(true);
+                yield return Player.WalkTo(World.OnGround(6.2f, 0f));
+                hatch.Open = false;
+                yield return hatch.Wait();
+            }
+            Model.EnterHabitat();
+            Player.SetIndoors(true, suited: true);
+            Player.Teleport(HabitatInterior.VestibulePoint); Player.BeginScript(); Player.EndScript();   // re-disable the controller after Teleport
+            Player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
+            InteriorCamera(180f, 10f);                               // from inside the room, facing the door
+            yield return Interior.AirlockDoor.SetOpen(true);
+            yield return Player.WalkTo(HabitatInterior.InsideDoorPoint);
+            Interior.AirlockDoor.Open = false;
+            Cam.Snap(235f, 8f);                                      // three-quarter view of the suit alcove
+            yield return Player.SuitOff(HabitatInterior.DockStand, HabitatInterior.DockYaw, HabitatInterior.HelmetShelf, HabitatInterior.SuitHang);
+            Player.EndScript(); cinematic = false;
+            Ui.Toast("Inside the habitat. Suit stowed in the alcove. Walk to a station and press E: bunk, lab, console, suit dock, comms, health scan, window.", Severity.Info);
+        }
+
+        /// <summary>Old instant switch (scripted tests, or no interior).</summary>
+        void EnterHabitatInstant()
         {
             Model.EnterHabitat();
             if (Interior != null)
@@ -251,6 +297,41 @@ namespace Mohakash
 
         public void ExitHabitat()
         {
+            if (cinematic) return;
+            if (Model.EvaLeft < 0.6f) { Model.ExitHabitat(); Ui?.Toast($"Suit not ready: {Model.EvaLeft:0.0} h. Rest or speed up time while it refills.", Severity.Warning); return; }
+            if (Interior == null || Player == null || !Player.gameObject.activeSelf || Player.InBed) { ExitHabitatInstant(); return; }
+            StartCoroutine(ExitRoutine());
+        }
+
+        IEnumerator ExitRoutine()
+        {
+            cinematic = true; SystemsOpen = false; Game.SetCursorFree(false);
+            if (Model.Resting) ToggleRest();
+            Player.BeginScript();
+            Cam.Snap(235f, 8f);
+            yield return Player.SuitOn(HabitatInterior.DockStand, HabitatInterior.DockYaw);
+            yield return Player.WalkTo(HabitatInterior.InsideDoorPoint);
+            yield return Player.TurnTo(180f);
+            yield return Interior.AirlockDoor.SetOpen(true);
+            yield return Player.WalkTo(HabitatInterior.VestibulePoint);
+            yield return Interior.AirlockDoor.SetOpen(false);
+            if (!Model.ExitHabitat()) { Player.EndScript(); cinematic = false; yield break; }
+            Cam.ClampToTerrain = true; Cam.MaxPitch = 70f;
+            Player.SetIndoors(false);
+            Player.Teleport(World.OnGround(6.2f, 0f)); Player.BeginScript(); Player.EndScript();
+            Player.transform.rotation = Quaternion.LookRotation(Vector3.right);
+            Cam.Target = Player.transform; Cam.Distance = 4.4f; Cam.Height = 1.5f; Cam.AutoOrbit = false;
+            Cam.Snap(-90f, 10f);                                     // outside, looking back at the hatch
+            var hatch = World.OuterHatch;
+            if (hatch != null) yield return hatch.SetOpen(true);
+            yield return Player.WalkTo(World.OnGround(World.AirlockPoint.x + 1.8f, World.AirlockPoint.z));
+            if (hatch != null) hatch.Open = false;
+            SetSpeed(1);
+            Player.EndScript(); cinematic = false;
+        }
+
+        void ExitHabitatInstant()
+        {
             if (!Model.ExitHabitat()) { Ui?.Toast($"Suit not ready: {Model.EvaLeft:0.0} h. Rest or speed up time while it refills.", Severity.Warning); return; }
             Cam.ClampToTerrain = true; Cam.MaxPitch = 70f;
             Player.gameObject.SetActive(true);
@@ -267,7 +348,7 @@ namespace Mohakash
             if (Player == null || Interior == null) return;
             bool want = Model.Inside && Model.Resting;
             Player.SetSleeping(want, HabitatInterior.BedPosition, HabitatInterior.BedYaw, HabitatInterior.BedExit);
-            Interior.SetBedCovered(Player.InBed);
+            Interior.UpdateBlanket(Player);
         }
 
         public void ToggleRest()
@@ -330,7 +411,7 @@ namespace Mohakash
         public void WindowLook()
         {
             Cam.Snap(MoonWorld.EarthAzimuth, 6f);
-            Ui.Toast("Earth hangs about 384,400 km away. Radio takes ~1.3 s each way. That is the delay on your Mission Control link.", Severity.Info);
+            Ui.Toast("Outside: the lunar surface around the outpost, and Earth hanging about 384,400 km away. Radio takes ~1.3 s each way - the delay on your Mission Control link.", Severity.Info);
         }
 
         // ------------------------------------------------------------------ Controls
@@ -478,6 +559,6 @@ namespace Mohakash
         // AutoTest helpers
         public void TestTeleport(Vector3 xz) { if (Player.gameObject.activeSelf) Player.Teleport(World.OnGround(xz.x, xz.z, 0.3f)); }
         public void TestDeploySeis() => DeploySeismometer(true);
-        public void TestEnterHabitat() => EnterHabitat();
+        public void TestEnterHabitat() => EnterHabitatInstant();
     }
 }

@@ -299,11 +299,13 @@ def S4(x, y, z): return np.diag([x, y, z, 1.0])
 class Body:
     """collects geos + dense weights; adds them to a MeshB at the end"""
     def __init__(s): s.parts = []
+    head = False                     # parts added while True go to the separate Crew_Head mesh
     def add(s, g, mat, dense, M=None):
         if M is not None: g = g.xf(M)
-        g.JW = weights_from(dense); s.parts.append((g, mat))
-    def into(s, m):
-        for g, mat in s.parts: m.items.append((mat, g, None))
+        g.JW = weights_from(dense); s.parts.append((g, mat, s.head))
+    def into(s, m, head=False):
+        for g, mat, h in s.parts:
+            if h == head: m.items.append((mat, g, None))
 
 # ------------------------------------------------------------------------------------------------- torso (tee) + neck
 def build_torso(B):
@@ -672,24 +674,28 @@ def build(texdir):
                            D['hip_x'], D['hip_dy'], D['ua'], D['la'], D['ul'], D['ll'])
     for side, sx in (('Left', 1), ('Right', -1)): N[side + 'UpperArm'].r = qaxis('z', sx * ARM)   # A-pose bind
     B = Body()
-    build_torso(B); build_head(B)
+    build_torso(B); B.head = True; build_head(B); B.head = False
     build_arm(B, 'Left', 1, flag=True)
     # right arm: build as left, then remap the bone weights Left->Right
     n0 = len(B.parts); build_arm(B, 'Left', -1, flag=False)
     for i in range(n0, len(B.parts)):
-        g, mat = B.parts[i]; j, w = g.JW
+        g, mat, h = B.parts[i]; j, w = g.JW
         jj = j.copy()
         for b in BONES:
             if b.startswith('Left'): jj[j == BI[b]] = BI['Right' + b[4:]]
         g.JW = (jj, w)
     build_legs(B)
+    sk = Skin([N[b] for b in BONES], arm)
     m = MeshB('Crew_Body'); B.into(m)
-    mesh = Node('Crew_Mesh', mesh=m); A.add(mesh); mesh.skin = Skin([N[b] for b in BONES], arm)
+    mesh = Node('Crew_Mesh', mesh=m); A.add(mesh); mesh.skin = sk
+    mh = MeshB('Crew_Head'); B.into(mh, head=True)
+    hn = Node('Crew_Head', mesh=mh); A.add(hn); hn.skin = sk
     AS.BIND_HIPS_Y = D['hips_y']
     N['Chest'].add(Node('Socket_Hold', t=D['hold']))
     N['Chest'].add(Node('Socket_Back', t=(0, 0.0, -0.20)))
     N['RightHand'].add(Node('Socket_HandR', t=(0, -.06, 0))); N['LeftHand'].add(Node('Socket_HandL', t=(0, -.06, 0)))
-    crew.add_clips(A, N, casual=True, more=PX.Lib(D).clips())
+    import suit_clips
+    crew.add_clips(A, N, casual=True, more=PX.Lib(D).clips() + suit_clips.clips(D))
     return A
 
 if __name__ == '__main__':

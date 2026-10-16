@@ -38,7 +38,7 @@ namespace Mohakash
 
         void Update()
         {
-            bool grounded = cc.enabled && cc.isGrounded;
+            bool grounded = !cc.enabled || cc.isGrounded;   // controller off = a scripted walk on the ground (airlock sequence)
             Vector3 d = transform.position - last; d.y = 0; last = transform.position;
 
             if (player != null && player.Indoors) { wasGrounded = true; airTime = 0f; }

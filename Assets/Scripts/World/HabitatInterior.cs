@@ -17,15 +17,146 @@ namespace Mohakash
         public static Vector3 BedPosition => Origin + new Vector3(-5.3f, 0.60f, 1.95f);
         public static float BedYaw => 180f;
         public static Vector3 BedExit => Origin + new Vector3(-4.3f, 0.15f, 1.9f);
-        GameObject blanket;
-        public void SetBedCovered(bool on)
+        // ── blanket: a cloth grid draped over the mattress, and over the sleeper's real (baked) pose while asleep ──
+        const int BX = 26, BZ = 34;
+        const float BedX = -5.3f, MattressTop = 0.60f, BlX0 = -5.84f, BlX1 = -4.60f, BlZ0 = 0.80f, BlZ1 = 2.34f;
+        Mesh blanketMesh, sheetMesh; float[] blH, blTarget; bool draped;
+
+        /// <summary>Call every frame. Flat on the mattress when the bunk is empty; tucked over the body once the sleeper is asleep.</summary>
+        public void UpdateBlanket(Astronaut who)
         {
-            if (blanket == null) return;
-            var p = blanket.transform.localPosition; p.y = on ? 0.93f : 0.62f; blanket.transform.localPosition = p;
-            var sc = blanket.transform.localScale; sc.y = on ? 0.10f : 0.06f; blanket.transform.localScale = sc;
+            if (blanketMesh == null) return;
+            bool want = who != null && who.Asleep;
+            if (want && !draped) { BlanketTarget(who); draped = true; }
+            else if (!want && draped) { BlanketTarget(null); draped = false; }
+            float k = 1f - Mathf.Exp(-(draped ? 2.5f : 6f) * Time.deltaTime);
+            bool moved = false;
+            for (int i = 0; i < blH.Length; i++) { float h = Mathf.Lerp(blH[i], blTarget[i], k); moved |= Mathf.Abs(h - blH[i]) > 1e-4f; blH[i] = h; }
+            if (moved) RebuildBlanket();
+        }
+
+        static float BedProfile(float x, float z)
+        {
+            float h = MattressTop + 0.025f;
+            float dx = Mathf.Abs(x - BedX) - 0.5f; if (dx > 0f) h -= dx * 2.4f;          // hangs over the side
+            if (z < 0.90f) h -= (0.90f - z) * 2.4f;                                        // ...and over the foot end
+            float qx = Mathf.Repeat((x - BlX0) / 0.16f, 1f), qz = Mathf.Repeat((z - BlZ0) / 0.16f, 1f);
+            h -= 0.005f * (Mathf.Exp(-qx * qx * 60f) + Mathf.Exp(-qz * qz * 60f));         // quilting seams
+            return Mathf.Max(h, 0.28f);
+        }
+
+        void BlanketTarget(Astronaut who)
+        {
+            float dx = (BlX1 - BlX0) / (BX - 1), dz = (BlZ1 - BlZ0) / (BZ - 1);
+            var body = new float[BX * BZ];
+            for (int i = 0; i < body.Length; i++) body[i] = -1f;
+            if (who != null && who.ActiveModel != null)
+            {
+                var baked = new Mesh();
+                foreach (var smr in who.ActiveModel.GetComponentsInChildren<SkinnedMeshRenderer>())
+                {
+                    smr.BakeMesh(baked, true);
+                    var M = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);
+                    foreach (var v in baked.vertices)
+                    {
+                        Vector3 p = M.MultiplyPoint3x4(v) - Origin;
+                        int ix = Mathf.RoundToInt((p.x - BlX0) / dx), iz = Mathf.RoundToInt((p.z - BlZ0) / dz);
+                        if (ix < 0 || ix >= BX || iz < 0 || iz >= BZ) continue;
+                        body[iz * BX + ix] = Mathf.Max(body[iz * BX + ix], p.y + 0.035f);
+                    }
+                }
+                Destroy(baked);
+                // cloth tension: the blanket spans from the body's high points and falls off at ~40 degrees
+                float fall = 0.85f * Mathf.Max(dx, dz);
+                for (int it = 0; it < 10; it++)
+                    for (int z = 0; z < BZ; z++)
+                        for (int x = 0; x < BX; x++)
+                        {
+                            float h = body[z * BX + x];
+                            if (x > 0) h = Mathf.Max(h, body[z * BX + x - 1] - fall);
+                            if (x < BX - 1) h = Mathf.Max(h, body[z * BX + x + 1] - fall);
+                            if (z > 0) h = Mathf.Max(h, body[(z - 1) * BX + x] - fall);
+                            if (z < BZ - 1) h = Mathf.Max(h, body[(z + 1) * BX + x] - fall);
+                            body[z * BX + x] = h;
+                        }
+            }
+            for (int z = 0; z < BZ; z++)
+                for (int x = 0; x < BX; x++)
+                {
+                    float px = BlX0 + x * dx, pz = BlZ0 + z * dz;
+                    float b = body[z * BX + x];
+                    if (Mathf.Abs(px - BedX) > 0.52f) b -= (Mathf.Abs(px - BedX) - 0.52f) * 1.5f;   // drop down past the mattress edge
+                    blTarget[z * BX + x] = Mathf.Max(BedProfile(px, pz), b);
+                }
+            // soften (cloth never has sharp creases at this scale)
+            var tmp = (float[])blTarget.Clone();
+            for (int z = 1; z < BZ - 1; z++)
+                for (int x = 1; x < BX - 1; x++)
+                    blTarget[z * BX + x] = Mathf.Max(BedProfile(BlX0 + x * dx, BlZ0 + z * dz),
+                        (tmp[z * BX + x] * 4 + tmp[z * BX + x - 1] + tmp[z * BX + x + 1] + tmp[(z - 1) * BX + x] + tmp[(z + 1) * BX + x]) / 8f);
+        }
+
+        void RebuildBlanket()
+        {
+            float dx = (BlX1 - BlX0) / (BX - 1), dz = (BlZ1 - BlZ0) / (BZ - 1);
+            var v = new Vector3[BX * BZ];
+            for (int z = 0; z < BZ; z++)
+                for (int x = 0; x < BX; x++)
+                    v[z * BX + x] = new Vector3(BlX0 + x * dx, blH[z * BX + x], BlZ0 + z * dz);
+            blanketMesh.vertices = v; blanketMesh.RecalculateNormals(); blanketMesh.RecalculateBounds();
+            // white turned-down sheet along the top edge
+            const int rows = 3; var sv = new Vector3[BX * rows];
+            for (int r = 0; r < rows; r++)
+                for (int x = 0; x < BX; x++) { var p = v[(BZ - rows + r) * BX + x]; sv[r * BX + x] = p + Vector3.up * 0.006f; }
+            sheetMesh.vertices = sv; sheetMesh.RecalculateNormals(); sheetMesh.RecalculateBounds();
+        }
+
+        static Mesh GridMesh(string name, int nx, int nz)
+        {
+            var m = new Mesh { name = name };
+            var v = new Vector3[nx * nz]; var uv = new Vector2[nx * nz]; var t = new int[(nx - 1) * (nz - 1) * 6];
+            for (int z = 0; z < nz; z++) for (int x = 0; x < nx; x++) uv[z * nx + x] = new Vector2(x / (nx - 1f), z / (nz - 1f));
+            int k = 0;
+            for (int z = 0; z < nz - 1; z++)
+                for (int x = 0; x < nx - 1; x++)
+                {
+                    int a = z * nx + x;
+                    t[k++] = a; t[k++] = a + nx; t[k++] = a + 1; t[k++] = a + 1; t[k++] = a + nx; t[k++] = a + nx + 1;
+                }
+            m.vertices = v; m.uv = uv; m.triangles = t; m.MarkDynamic();
+            return m;
+        }
+
+        void BuildBlanket(Material orange, Material white)
+        {
+            Material Cloth(Material src, string n)
+            {
+                var c = new Material(src) { name = n };
+                c.SetFloat("_Smoothness", 0.12f); c.SetFloat("_Cull", 0f);   // fabric, visible from both sides
+                return c;
+            }
+            blanketMesh = GridMesh("Blanket", BX, BZ); sheetMesh = GridMesh("Sheet fold", BX, 3);
+            foreach (var (mesh, mat, n) in new[] { (blanketMesh, Cloth(orange, "Blanket"), "Blanket"), (sheetMesh, Cloth(white, "Sheet"), "Sheet fold") })
+            {
+                var g = new GameObject(n); g.transform.SetParent(transform, false);
+                g.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var r = g.AddComponent<MeshRenderer>(); r.sharedMaterial = mat;
+            }
+            blH = new float[BX * BZ]; blTarget = new float[BX * BZ];
+            BlanketTarget(null);
+            System.Array.Copy(blTarget, blH, blH.Length);
+            RebuildBlanket();
         }
 
         public static Vector3 SpawnPoint => Origin + new Vector3(0f, 0.15f, -3.0f);
+        // airlock + suit dock choreography points (feet on the floor, y = 0)
+        public static Vector3 VestibulePoint => Origin + new Vector3(0f, 0f, -5.8f);     // inside the airlock chamber, behind the inner door
+        public static Vector3 InsideDoorPoint => Origin + new Vector3(0f, 0f, -3.4f);    // just inside the room, in front of the door
+        public static Vector3 DockStand => Origin + new Vector3(-3.9f, 0f, -3.05f);      // in front of the open suit alcove
+        public static float DockYaw => 180f;                                              // facing the alcove (-Z)
+        public static Vector3 SuitHang => Origin + new Vector3(-3.9f, 0f, -4.12f);       // where the empty suit stands in the alcove
+        public static Vector3 HelmetShelf => Origin + new Vector3(-3.9f, 1.98f, -4.18f); // helmet pivot on the alcove shelf
+        public SlidingDoor AirlockDoor { get; private set; }
         public const float W = 12f, D = 9f, H = 3.4f;
 
         Mission1 m;
@@ -126,7 +257,11 @@ namespace Mohakash
             // shell
             Box("Floor", new Vector3(0, -0.15f, 0), new Vector3(W + 0.6f, 0.3f, D + 0.6f), floor);
             Box("Ceiling", new Vector3(0, H + 0.15f, 0), new Vector3(W + 0.6f, 0.3f, D + 0.6f), wall, true, 2);   // layer 2: the camera ignores it
-            Box("Wall S (airlock)", new Vector3(0, H / 2, -D / 2 - 0.15f), new Vector3(W + 0.6f, H, 0.3f), wall);
+            // south wall with the airlock doorway (x -1..1, y 0..2.5) cut out
+            float sz = -D / 2 - 0.15f, side = (W + 0.6f) / 2 - 1.0f;
+            Box("Wall S left", new Vector3(-1.0f - side / 2, H / 2, sz), new Vector3(side, H, 0.3f), wall);
+            Box("Wall S right", new Vector3(1.0f + side / 2, H / 2, sz), new Vector3(side, H, 0.3f), wall);
+            Box("Wall S over door", new Vector3(0, (2.5f + H) / 2, sz), new Vector3(2.0f, H - 2.5f, 0.3f), wall);
             Box("Wall N", new Vector3(0, H / 2, D / 2 + 0.15f), new Vector3(W + 0.6f, H, 0.3f), wall);
             Box("Wall W", new Vector3(-W / 2 - 0.15f, H / 2, 0), new Vector3(0.3f, H, D), wall);
             // east wall with a big window (z -1.8..2.2, y 0.9..2.5)
@@ -139,6 +274,8 @@ namespace Mohakash
             Box("Frame top", new Vector3(W / 2, 2.52f, 0.2f), new Vector3(0.2f, 0.06f, 4.1f), steel, false);
             Box("Frame L", new Vector3(W / 2, 1.7f, -1.8f), new Vector3(0.2f, 1.6f, 0.06f), steel, false);
             Box("Frame R", new Vector3(W / 2, 1.7f, 2.2f), new Vector3(0.2f, 1.6f, 0.06f), steel, false);
+            // the opening shows the real lunar surface outside the HAB (portal camera, see HabitatWindow)
+            HabitatWindow.Create(transform, Origin + new Vector3(W / 2 + 0.05f, 1.71f, 0.2f), 4.0f, 1.6f, m.World, () => m.Model != null && m.Model.Inside, new Material(sh));
 
             // wall ribs + dark skirting for depth
             for (int i = -1; i <= 1; i++)
@@ -149,6 +286,34 @@ namespace Mohakash
             Box("Skirt S", new Vector3(0, 0.1f, -D / 2 + 0.03f), new Vector3(W, 0.2f, 0.06f), wallDark, false);
             Box("Skirt N", new Vector3(0, 0.1f, D / 2 - 0.03f), new Vector3(W, 0.2f, 0.06f), wallDark, false);
             Box("Skirt W", new Vector3(-W / 2 + 0.03f, 0.1f, 0), new Vector3(0.06f, 0.2f, D), wallDark, false);
+
+            // NASA module feel: angled panels where walls meet the ceiling (pressure-vessel cross-section),
+            // ISS-style overhead handrails, and soft cargo transfer bags (CTBs) stowed by the south wall
+            foreach (var (pos, size, rotX, rotZ) in new[] {
+                (new Vector3(0, H - 0.25f, D / 2 - 0.25f), new Vector3(W, 0.08f, 0.75f), 45f, 0f),
+                (new Vector3(0, H - 0.25f, -D / 2 + 0.25f), new Vector3(W, 0.08f, 0.75f), -45f, 0f),
+                (new Vector3(-W / 2 + 0.25f, H - 0.25f, 0), new Vector3(0.75f, 0.08f, D), 0f, 45f),
+                (new Vector3(W / 2 - 0.25f, H - 0.25f, 0), new Vector3(0.75f, 0.08f, D), 0f, -45f) })
+            {
+                var c = Box("Ceiling chamfer", pos, size, wall, false, 2);
+                c.transform.localRotation = Quaternion.Euler(rotX, 0f, rotZ);
+            }
+            var rail = Mat(new Color(0.92f, 0.66f, 0.12f), 0.45f, 0.3f);
+            foreach (float zr in new[] { D / 2 - 0.14f, -D / 2 + 0.14f })
+            {
+                Pipe("Handrail", new Vector3(-W / 2 + 0.6f, 2.62f, zr), new Vector3(W / 2 - 0.6f, 2.62f, zr), 0.022f, rail);
+                for (float xr = -W / 2 + 0.8f; xr < W / 2 - 0.6f; xr += 1.6f)
+                    Pipe("Handrail standoff", new Vector3(xr, 2.62f, zr), new Vector3(xr, 2.62f, zr + Mathf.Sign(zr) * 0.14f), 0.016f, rail);
+            }
+            var ctb = Mat(new Color(0.83f, 0.79f, 0.67f), 0.15f, 0f);
+            var strap = Mat(new Color(0.20f, 0.30f, 0.55f), 0.2f, 0f);
+            for (int i = 0; i < 5; i++)
+            {
+                var p = new Vector3(2.3f + (i % 3) * 0.55f, 0.2f + (i / 3) * 0.4f, -D / 2 + 0.38f);
+                Box("Cargo transfer bag", p, new Vector3(0.5f, 0.38f, 0.42f), ctb, i < 3);
+                Box("CTB strap", p + new Vector3(0, 0.0f, 0.215f), new Vector3(0.06f, 0.39f, 0.01f), strap, false);
+                Box("CTB label", p + new Vector3(0.12f, 0.08f, 0.215f), new Vector3(0.14f, 0.08f, 0.012f), white, false);
+            }
 
             // lighting: three ceiling strips + soft point lights (kept at 3 so URP's per-object light limit is never hit)
             for (int i = -1; i <= 1; i++)
@@ -165,17 +330,42 @@ namespace Mohakash
             Box("Airlock post L", new Vector3(-1.15f, 1.3f, -D / 2 + 0.15f), new Vector3(0.22f, 2.6f, 0.3f), steel, false);
             Box("Airlock post R", new Vector3(1.15f, 1.3f, -D / 2 + 0.15f), new Vector3(0.22f, 2.6f, 0.3f), steel, false);
             Box("Airlock lintel", new Vector3(0, 2.7f, -D / 2 + 0.15f), new Vector3(2.5f, 0.22f, 0.3f), steel, false);
-            Box("Airlock door", new Vector3(0, 1.25f, -D / 2 + 0.06f), new Vector3(2.0f, 2.5f, 0.1f), wallDark, false);
-            Box("Airlock status", new Vector3(0, 2.85f, -D / 2 + 0.05f), new Vector3(0.7f, 0.12f, 0.03f), greenGlow, false);
+            // inner airlock door: two leaves sliding into the wall
+            AirlockDoor = SlidingDoor.Create(transform, "Airlock inner door", Origin + new Vector3(0, 1.25f, -D / 2 - 0.12f), Vector3.right, Vector3.forward,
+                                             2.0f, 2.5f, wallDark, steel, Mat(new Color(1f, 0.15f, 0.1f), 0.2f, 0f, 2.0f), greenGlow);
+            // airlock chamber (vestibule) behind it, with the outer hatch at the far end
+            float vz = -D / 2 - 0.3f - 1.1f;
+            Box("Airlock floor", new Vector3(0, -0.15f, vz), new Vector3(2.9f, 0.3f, 2.2f), floor);
+            Box("Airlock ceiling", new Vector3(0, 2.85f, vz), new Vector3(2.9f, 0.3f, 2.2f), wall, true, 2);
+            Box("Airlock wall W", new Vector3(-1.45f, 1.35f, vz), new Vector3(0.3f, 2.7f, 2.2f), wall);
+            Box("Airlock wall E", new Vector3(1.45f, 1.35f, vz), new Vector3(0.3f, 2.7f, 2.2f), wall);
+            Box("Airlock outer wall", new Vector3(0, 1.35f, vz - 1.25f), new Vector3(2.9f, 2.7f, 0.3f), wall);
+            Box("Outer hatch", new Vector3(0, 1.1f, vz - 1.09f), new Vector3(1.1f, 1.9f, 0.06f), wallDark, false);
+            Box("Outer hatch wheel", new Vector3(0, 1.15f, vz - 1.05f), new Vector3(0.35f, 0.35f, 0.04f), steel, false);
+            Box("Airlock light", new Vector3(0, 2.68f, vz), new Vector3(0.9f, 0.04f, 0.25f), lamp, false);
+            Box("Airlock floor grille", new Vector3(0, 0.012f, vz), new Vector3(1.6f, 0.02f, 1.6f), steel, false);
+            var vl = new GameObject("Airlock lamp").AddComponent<Light>();
+            vl.transform.SetParent(transform, false); vl.transform.localPosition = new Vector3(0, 2.4f, vz);
+            vl.type = LightType.Point; vl.range = 3.5f; vl.intensity = 2.2f; vl.color = new Color(0.9f, 0.95f, 1f); vl.shadows = LightShadows.None;
             Box("Hazard strip", new Vector3(0, 0.012f, -D / 2 + 0.55f), new Vector3(2.4f, 0.02f, 0.35f), amberGlow, false);
             Station("Airlock door", new Vector3(0, 0, -3.5f), 2.2f, new Color(0.3f, 1f, 0.5f),
                 () => m.Model.EvaLeft < 0.6f ? $"Airlock: suit still refilling ({m.Model.EvaLeft:0.0} h) - wait or rest" : $"Go outside (EVA suit ready: {m.Model.EvaLeft:0.0} h)",
                 m.ExitHabitat);
 
             // ── suit dock (south wall, west) ─────────────────────────────────────────
-            for (int i = 0; i < 2; i++)
+            // open suit alcove (the suit is stored here while you are inside; helmet on the shelf) + one closed locker
             {
-                float x = -3.9f + i * 1.15f;
+                float x = -3.9f, zc = -D / 2 + 0.4f;
+                Box("Suit alcove back", new Vector3(x, 1.15f, -D / 2 + 0.02f), new Vector3(1.14f, 2.3f, 0.04f), wallDark, false);
+                Box("Suit alcove side L", new Vector3(x - 0.57f, 1.15f, zc), new Vector3(0.04f, 2.3f, 0.8f), white, true);
+                Box("Suit alcove side R", new Vector3(x + 0.57f, 1.15f, zc), new Vector3(0.04f, 2.3f, 0.8f), white, true);
+                Box("Suit alcove roof", new Vector3(x, 2.32f, zc), new Vector3(1.18f, 0.04f, 0.8f), white, false);
+                Box("Helmet shelf", new Vector3(x, 1.96f, zc - 0.1f), new Vector3(1.1f, 0.03f, 0.55f), steel, false);
+                Box("Alcove stripe", new Vector3(x, 0.02f, zc + 0.38f), new Vector3(1.1f, 0.02f, 0.06f), orange, false);
+                Box("Alcove light", new Vector3(x, 2.28f, zc), new Vector3(0.7f, 0.03f, 0.12f), greenGlow, false);
+            }
+            {
+                float x = -2.75f;
                 Box("Suit locker", new Vector3(x, 1.1f, -D / 2 + 0.3f), new Vector3(1.0f, 2.2f, 0.5f), white, true);
                 Box("Locker stripe", new Vector3(x, 1.5f, -D / 2 + 0.56f), new Vector3(0.9f, 0.1f, 0.02f), orange, false);
                 Box("Locker light", new Vector3(x, 2.0f, -D / 2 + 0.57f), new Vector3(0.3f, 0.08f, 0.02f), greenGlow, false);
@@ -198,7 +388,7 @@ namespace Mohakash
             Box("Bunk frame", new Vector3(-5.3f, 0.2f, 1.9f), new Vector3(1.1f, 0.4f, 2.1f), wallDark);
             Box("Mattress", new Vector3(-5.3f, 0.5f, 1.9f), new Vector3(1.0f, 0.2f, 2.0f), Mat(new Color(0.30f, 0.40f, 0.55f), 0.2f, 0f), false);
             Box("Pillow", new Vector3(-5.3f, 0.66f, 2.7f), new Vector3(0.7f, 0.13f, 0.4f), white, false);
-            blanket = Box("Blanket", new Vector3(-5.3f, 0.62f, 1.5f), new Vector3(0.95f, 0.06f, 1.1f), orange, false);
+            BuildBlanket(orange, Mat(new Color(0.95f, 0.95f, 0.93f), 0.2f, 0f));
             Box("Bunk locker", new Vector3(-5.78f, 2.1f, 1.9f), new Vector3(0.4f, 0.7f, 2.0f), steel, false);
             Station("Bunk", new Vector3(-4.3f, 0, 1.9f), 2.1f, new Color(0.6f, 0.7f, 1f),
                 () => m.Model.Resting ? "Wake up" : $"Sleep (fatigue {m.Model.Fatigue:0}%, time runs 4x)", m.ToggleRest);

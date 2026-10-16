@@ -32,19 +32,25 @@ def node_mats(j, override=None):
     for i in range(len(nodes)): world(i)
     return W
 
-def meshes(path, pose=None):
+def meshes(path, pose=None, only=None, rigid_override=None):
+    """only: set of mesh-node names to include. rigid_override: {node name: 4x4 world matrix} for unskinned nodes."""
     j, b = load(path); skin = j['skins'][0]; joints = skin['joints']
     ibm = acc(j, b, skin['inverseBindMatrices']).reshape(-1, 4, 4).transpose(0, 2, 1)
     ov = None
     if pose is not None:
         ov = {name: (None, q) for name, (t, q) in pose.items()}; ov['Hips'] = (pose['Hips'][0], pose['Hips'][1])
     W = node_mats(j, ov); Ms = np.stack([W[jn] @ ibm[k] for k, jn in enumerate(joints)])
-    out = []
-    for p in j['meshes'][0]['primitives']:
+    out = []; meshes.W = W; meshes.j = j
+    for ni, nd in enumerate(j['nodes']):
+      if 'mesh' not in nd or (only is not None and nd.get('name') not in only): continue
+      for p in j['meshes'][nd['mesh']]['primitives']:
         P = acc(j, b, p['attributes']['POSITION']).astype(float); I = acc(j, b, p['indices']).reshape(-1, 3)
-        J = acc(j, b, p['attributes']['JOINTS_0']).astype(int); Wt = acc(j, b, p['attributes']['WEIGHTS_0']).astype(float)
         Ph = np.c_[P, np.ones(len(P))]; Q = np.zeros_like(P)
-        for c in range(4): Q += Wt[:, c:c + 1] * np.einsum('nij,nj->ni', Ms[J[:, c]], Ph)[:, :3]
+        if 'skin' in nd:
+            J = acc(j, b, p['attributes']['JOINTS_0']).astype(int); Wt = acc(j, b, p['attributes']['WEIGHTS_0']).astype(float)
+            for c in range(4): Q += Wt[:, c:c + 1] * np.einsum('nij,nj->ni', Ms[J[:, c]], Ph)[:, :3]
+        else:
+            Mw = (rigid_override or {}).get(nd.get('name'), W[ni]); Q = (Mw @ Ph.T).T[:, :3]
         m = j['materials'][p['material']]; pbr = m['pbrMetallicRoughness']
         fac = pbr.get('baseColorFactor', [1, 1, 1, 1])
         mat = pyrender.MetallicRoughnessMaterial(baseColorFactor=fac, metallicFactor=pbr.get('metallicFactor', 0), roughnessFactor=pbr.get('roughnessFactor', .6), doubleSided=True)
@@ -62,6 +68,9 @@ def meshes(path, pose=None):
         prim = pyrender.Primitive(positions=Q, normals=tm.vertex_normals, indices=I, texcoord_0=uv, material=mat, mode=4)
         out.append(pyrender.Mesh([prim]))
     return out
+
+def node_world(name):
+    j = meshes.j; return meshes.W[next(i for i, n in enumerate(j['nodes']) if n.get('name') == name)]
 
 R = None
 def render(ms, eye, target, size=(600, 800), fov=30):
@@ -99,6 +108,29 @@ if __name__ == '__main__':
         for az in (25,):
             a = math.radians(az); ims.append(render(ms, (1.5 * math.sin(a), 1.2, 1.5 * math.cos(a)), (0, 1.1, 0), size=(500, 500), fov=34))
         a = math.radians(-30); ims.append(render(ms, (0.5 * math.sin(a) + 0.2, 0.8, 0.5 * math.cos(a)), (0.2, 0.75, 0.0), size=(500, 500), fov=30))
+        sheet(ims, 3).save(out)
+    elif mode == 'suit':
+        import suit_clips
+        eva, casual = path, sys.argv[4]
+        AS.BIND_HIPS_Y = PX.EVA['hips_y']; clips_e = {c[0]: c for c in suit_clips.clips(PX.EVA)}
+        clips_c = {c[0]: c for c in suit_clips.clips(PX.CASUAL)}
+        fn = clips_e['HelmetOff'][1]
+        meshes(eva, AS.pose_dict(fn(0.8))); grip_head = node_world('Head')
+        hm = (node_world('LeftHand')[:3, 3] + node_world('RightHand')[:3, 3]) / 2
+        off = np.linalg.inv(np.c_[np.r_[np.eye(3), [[0, 0, 0]]], np.r_[hm, 1]]) @ grip_head     # helmet frame relative to the hands midpoint
+        ims = []
+        for t in (0.0, 0.8, 1.1, 1.4, 1.85, 2.4):
+            AS.BIND_HIPS_Y = PX.EVA['hips_y']
+            ms = meshes(eva, AS.pose_dict(fn(t)), only={'Astronaut_Mesh'})
+            Wh = node_world('Head')
+            if t > 0.8:
+                hm = (node_world('LeftHand')[:3, 3] + node_world('RightHand')[:3, 3]) / 2
+                T = np.eye(4); T[:3, 3] = hm; Wh = T @ off
+            ms += meshes(eva, AS.pose_dict(fn(t)), only={'EVA_Helmet'}, rigid_override={'EVA_Helmet': Wh @ np.linalg.inv(node_world('Head')) @ node_world('EVA_Helmet')})
+            if t >= 0.8:
+                AS.BIND_HIPS_Y = PX.CASUAL['hips_y']
+                ms += meshes(casual, AS.pose_dict(clips_c['HelmetOff'][1](t)), only={'Crew_Head'})
+            im = render(ms, (1.6, 1.6, 2.4), (0, 1.35, 0), size=(420, 520), fov=34); ImageDraw.Draw(im).text((8, 8), f'HelmetOff {t:.1f}s', fill=(255, 255, 0)); ims.append(im)
         sheet(ims, 3).save(out)
     else:
         L = PX.Lib(PX.CASUAL)

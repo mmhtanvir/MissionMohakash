@@ -119,7 +119,8 @@ def clip_table(lib):
              ('Jump', jump, 3.4, False), ('Wave', AS.wave, 2.4, False), ('Interact', AS.interact, 1.6, False),
              ('Death', AS.death, 2.6, False),
              ('LieDown', lie, 1.9, False), ('Sleep', sleep, 5.0, True), ('GetUp', lambda t, T=1.9: lie(1.9 - t), 1.9, False)]
-    return clips + lib.clips()
+    import suit_clips
+    return clips + lib.clips() + suit_clips.clips(D)
 
 # ------------------------------------------------------------------ GLB patch
 def main(src, dst):

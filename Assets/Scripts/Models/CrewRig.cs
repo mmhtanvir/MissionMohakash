@@ -67,6 +67,14 @@ namespace Mohakash
             anim.CrossFade(s.name, fade);
         }
 
+        /// <summary>Evaluates one frame of a clip right now (bones move immediately), e.g. to measure where a hand will be.</summary>
+        public void SampleAt(string clip, float time)
+        {
+            var s = Find(clip); if (s == null) return;
+            anim.Stop(); s.enabled = true; s.weight = 1f; s.time = time; anim.Sample(); s.enabled = false;
+            current = null;
+        }
+
         public void SetSpeed(float speed)
         {
             var s = current != null ? Find(current) : null;

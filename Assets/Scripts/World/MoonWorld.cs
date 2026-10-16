@@ -17,6 +17,7 @@ namespace Mohakash
         public Vector3 RoverStart { get; private set; }
         public Vector3 SeisCratePoint { get; private set; }
         public Transform SunDisk, SunCorona, Earth, Stars;
+        public SlidingDoor OuterHatch { get; private set; }
         public readonly List<Transform> SolarArrays = new List<Transform>();
 
         Transform horizonHaze;
@@ -554,7 +555,12 @@ namespace Mohakash
         {
             var cam = Camera.main;
             if (cam == null) return;
-            var p = cam.transform.position;
+            CenterSky(cam.transform.position);
+        }
+
+        /// <summary>Re-centres the far sky objects (stars, haze, sun disk, Earth) on a viewpoint. HabitatWindow calls it around its own render.</summary>
+        public void CenterSky(Vector3 p)
+        {
 
             if (Stars) Stars.position = p;
             if (horizonHaze) horizonHaze.position = new Vector3(p.x, 0f, p.z);
@@ -598,12 +604,17 @@ namespace Mohakash
             var root = new GameObject("Outpost").transform;
             root.SetParent(transform);
 
-            Hab = Spawn("GeodesicDome", OnGround(0, 0), Quaternion.identity, 1f, root, "HAB - Habitat Module").transform;
+            Hab = Spawn("SurfaceHabitat", OnGround(0, 0), Quaternion.identity, 1f, root, "HAB - Surface Habitat Module").transform;   // NASA Artemis-style surface habitat (tools/structures_v2/surface_hab.py)
             AddBoxCollider(Hab.gameObject, 0.8f);
 
             var airlock = Spawn("Connector", OnGround(5.6f, 0), Quaternion.Euler(0, 180, 0), 1f, root, "SUI - Suit Station / airlock");
             if (airlock) airlock.transform.position += Vector3.down * 1.1f;
             AirlockPoint = OnGround(8.6f, 0);
+            // outer hatch at the end of the airlock tunnel (opens / closes smoothly when going in or out)
+            float hatchY = (airlock ? airlock.transform.position.y : OnGround(5.6f, 0).y - 1.1f) + 2.22f;   // Connector.glb door: local x -0.78, y 2.22, rotated 180
+            OuterHatch = SlidingDoor.Create(root, "Airlock outer hatch", new Vector3(6.47f, hatchY, 0f), Vector3.forward, Vector3.right, 1.3f, 1.7f,
+                SlidingDoor.LitMat(new Color(0.86f, 0.88f, 0.91f), 0.45f, 0.1f), SlidingDoor.LitMat(new Color(0.95f, 0.45f, 0.08f), 0.3f),
+                SlidingDoor.LitMat(new Color(1f, 0.15f, 0.1f), 0.2f, 0f, 2f), SlidingDoor.LitMat(new Color(0.25f, 1f, 0.45f), 0.2f, 0f, 2f));
 
             if (kit.Has("OGS")) AddBoxCollider(Spawn("HouseLong", OnGround(-11f, -1f), Quaternion.Euler(0, 90, 0), 0.8f, root, "OGS - Oxygen Generator module"), 0.9f);
             if (kit.Has("STO"))

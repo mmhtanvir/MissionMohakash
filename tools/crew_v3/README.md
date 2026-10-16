@@ -21,3 +21,5 @@ If you replace the astronaut mesh with another static model: put it in `original
 | `original/CrewCasual_v2_blocky.glb` | The previous primitive-built model, kept for rollback. |
 
 `glbkit.py` now accepts per-vertex smooth weights (`geo.JW = (joints[n,4], weights[n,4])`).
+| `suit_clips.py` | HelmetOff / HelmetOn / WalkBack clips (per-frame IK along a wrist path); used by rig_eva.py and crew_hq.py. |
+| `split_helmet.py` | `python3 split_helmet.py rigged.glb AstronautEVA.glb` - moves the helmet into a rigid `EVA_Helmet` node under Head. |

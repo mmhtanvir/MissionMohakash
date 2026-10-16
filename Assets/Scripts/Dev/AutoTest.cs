@@ -121,7 +121,9 @@ namespace Mohakash
                 }
                 yield return Shot("11_sample_site");
                 m.TestTeleport(m.World.AirlockPoint + new Vector3(1.5f, 0, 0)); yield return Wait(0.5f);
-                yield return Tap(Key.E); yield return Wait(1.5f);
+                yield return Tap(Key.E); yield return Wait(0.5f);
+                for (float w = 0f; m.InCinematic && w < 40f; w += Time.unscaledDeltaTime) yield return null;   // hatch, airlock, suit off
+                yield return Wait(0.5f);
                 yield return Shot("12_inside_habitat");
                 yield return Tap(Key.Tab); yield return Wait(0.6f);
                 yield return Shot("13_systems_panel");
@@ -131,6 +133,7 @@ namespace Mohakash
             {
                 m.TestTeleport(m.World.AirlockPoint + new Vector3(1.5f, 0, 0)); yield return Wait(0.5f);
                 yield return Tap(Key.E); yield return Wait(0.5f);
+                for (float w = 0f; m.InCinematic && w < 40f; w += Time.unscaledDeltaTime) yield return null;
             }
 
             m.TestSpeed = 40f;

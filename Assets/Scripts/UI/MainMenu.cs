@@ -43,7 +43,7 @@ namespace Mohakash
             astro.transform.rotation = Quaternion.LookRotation(-dir);
             var right = Vector3.Cross(Vector3.up, dir);
             MoonWorld.Spawn("Rover", spot + dir * 4f + right * 5f, Quaternion.LookRotation(-right + dir), 0.62f, null, "Rover (menu)");
-            MoonWorld.Spawn("GeodesicDome", spot + dir * 26f + right * 14f, Quaternion.identity, 1f, null, "Habitat (menu)");
+            MoonWorld.Spawn("SurfaceHabitat", spot + dir * 26f + right * 14f, Quaternion.Euler(0f, 35f, 0f), 1f, null, "Habitat (menu)");
             MoonWorld.Spawn("Spaceship", spot + dir * 34f - right * 4f, Quaternion.Euler(0, 200, 0), 1.1f, null, "Lander (menu)");
 
             cam.transform.position = spot - dir * 5.2f + Vector3.up * 1.5f - right * 2.2f;
