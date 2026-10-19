@@ -12,7 +12,7 @@ namespace Mohakash
         Mission1 m;
         /// <summary>AutoTest hook: advances the current pre-launch screen (briefing -> loadout -> launch).</summary>
         public Action<Loadout> TestAdvance;
-        VisualElement root, hud, markers, alerts, systems, pause, fade, banner, leftCol;
+        VisualElement root, hud, markers, alerts, systems, pause, fade, banner, leftCol, linkDot;
         /// <summary>Exposes the root UI element so MinimapSystem can attach its panel.</summary>
         public VisualElement Root => root;
         Label bannerText, promptText, clockText, hintText;
@@ -333,7 +333,7 @@ namespace Mohakash
             stats["lunarPhase"] = Ui.Text(clockInfo, "", "small");
             stats["lunarNight"] = Ui.Text(clockInfo, "", "small", "cyan");
 
-            var link = Ui.Box(right, "row"); var linkDot = Ui.Dot(link, Severity.Good);
+            var link = Ui.Box(right, "row"); linkDot = Ui.Dot(link, Severity.Warning);
             stats["link"] = Ui.Text(link, "", "small", "muted");
             Ui.Box(right, "card-divider");
             Ui.Text(right, "OBJECTIVES", "card-title");
@@ -355,6 +355,8 @@ namespace Mohakash
 
             BuildSystemsPanel();
             BuildInventoryPanel();
+            BuildStoresPanel();
+            BuildPlanBoard();
             BuildTasksPanel();
             BuildPauseMenu();
         }
@@ -419,8 +421,12 @@ namespace Mohakash
             SetStat("sBatt", mo.SuitBatt / MissionModel.SuitBattMax, $"{mo.SuitBatt:0.0} h", Ui.Level(mo.SuitBatt, 1f, 0.5f));
             SetStat("sCO2", mo.SuitCO2 / MissionModel.SuitCO2Max, $"{mo.SuitCO2:0.0} h", Ui.Level(mo.SuitCO2, 1f, 0.5f));
 
-            bool com = mo.Load("COM")?.Powered ?? false;
-            stats["link"].text = com ? "Earth link OK (~1.3 s delay)  |  local network OK" : "Earth link OFFLINE (no COM power)  |  local network OK";
+            stats["link"].text = !m.Kit.Has("COM") ? "No comms console: no Earth or Gateway link"
+                : mo.Net.Connected ? "Earth + Gateway link OK (~1.3 s delay)"
+                : mo.Load("COM")?.Powered != true ? "COMMS DOWN: no power to the COM terminal"
+                : "COMMS DOWN: fix the antenna at the comms workstation";
+            Colour(stats["link"], mo.Net.Connected ? Severity.Info : Severity.Warning);
+            Ui.SetDot(linkDot, mo.Net.Connected ? Severity.Good : Severity.Warning);
 
             foreach (var o in objectives)
             {
@@ -443,6 +449,8 @@ namespace Mohakash
             UpdateMarkers();
             UpdateSystems();
             UpdateInventory();
+            UpdateStores();
+            UpdatePlanBoard();
             UpdateTasks();
 
             bool crit = mo.O2ZeroHours > 0 || (!mo.Inside && mo.EvaLeft < 0.5f) || (mo.SpeActive && !mo.Inside);
@@ -553,13 +561,15 @@ namespace Mohakash
                 }
                 var world = i.transform.position + Vector3.up * 2.4f;
                 var sp = cam.WorldToViewportPoint(world);
-                bool vis = show && i.Indoor == m.Model.Inside && i.isActiveAndEnabled && i.ShowMarker() && sp.z > 0;
+                bool next = i == Target;
+                bool vis = show && i.Indoor == m.Model.Inside && i.isActiveAndEnabled && (next || i.ShowMarker()) && sp.z > 0;
+                v.EnableInClassList("marker-next", next);
                 Ui.Show(v, vis);
                 if (!vis) continue;
                 var panelSize = markers.layout.size;
                 v.style.left = sp.x * panelSize.x; v.style.top = (1f - sp.y) * panelSize.y;
                 float d = Vector3.Distance(m.ActivePosition, i.transform.position);
-                ((Label)v[0]).text = $"{i.Label}  {d:0} m";
+                ((Label)v[0]).text = next ? $"NEXT: {i.Label}  {d:0} m" : $"{i.Label}  {d:0} m";
             }
             foreach (var dead in markerViews.Keys.Where(k => k == null || !Interactable.All.Contains(k)).ToList())
             {
@@ -678,7 +688,8 @@ namespace Mohakash
             }
             string pending = gw.Pending.Count == 0 ? "none" : string.Join("; ", gw.Pending.Select(p => $"hour {p.due:0}: {string.Join(", ", p.items.Select(i => i.Name))}"));
             gatewayInfo.text = $"Drone load {kg:0} / {Resupply.DroneKg:0} kg     Calls left {Resupply.MaxCalls - gw.Calls} / {Resupply.MaxCalls}\nOn the way: {pending}";
-            gatewaySend.SetEnabled(kg > 0f && kg <= Resupply.DroneKg && gw.Calls < Resupply.MaxCalls);
+            gatewaySend.SetEnabled(mo.Net.Connected && kg > 0f && kg <= Resupply.DroneKg && gw.Calls < Resupply.MaxCalls);
+            if (!mo.Net.Connected) gatewayInfo.text = "COMMS DOWN: fix the antenna and establish the link at the comms workstation to reach Gateway.\n" + gatewayInfo.text;
         }
 
         void UpdateSystems()
@@ -775,6 +786,147 @@ namespace Mohakash
             invTorchBtn.text = m.Torch.On ? "Turn off (T)" : "Turn on (T)";
         }
 
+        // ================================================================== Plan board (habitat wall, or J)
+
+        VisualElement planBoard; Label planTasks, planWarn; float planNext;
+        readonly List<(DropdownField d, Label status)> planRows = new List<(DropdownField, Label)>();
+        List<Activity> planActs;
+
+        void BuildPlanBoard()
+        {
+            planBoard = Ui.Box(root, "screen", "center", "dim");
+            var p = Ui.Panel(planBoard); p.style.width = 1500; p.style.maxHeight = Length.Percent(92);
+            var head = Ui.Box(p, "row");
+            Ui.Text(head, "MISSION PLAN", "h1"); Ui.Box(head, "grow");
+            Ui.Button(head, "Close (J / Esc)", m.TogglePlan);
+            var cols = Ui.Box(p, "row"); cols.style.alignItems = Align.FlexStart;
+
+            // left: the 72 h schedule; blocks that have not started can still be changed
+            var left = Ui.Box(cols, "col"); left.style.width = 820; left.style.marginRight = 24;
+            Ui.Text(left, "SCHEDULE  (future blocks can be changed)", "section");
+            planActs = MissionPlan.Available(m.Kit);
+            var names = planActs.Select(MissionPlan.Name).ToList();
+            for (int i = 0; i < MissionPlan.Blocks; i++)
+            {
+                int b = i;
+                var r = Ui.Box(left, "row"); r.style.marginBottom = 2;
+                Ui.Text(r, MissionPlan.Hours(b), "small").style.width = 70;
+                var d = Ui.Add(r, new DropdownField(names, planActs.IndexOf(m.Plan.At[b])));
+                d.style.width = 420; d.style.fontSize = 15;
+                d.RegisterValueChangedCallback(_ => { m.Plan.At[b] = planActs[d.index]; planNext = 0f; });
+                var st = Ui.Text(r, "", "small"); st.style.width = 100; st.style.marginLeft = 8;
+                Ui.Text(r, MissionPlan.Events(b), "small", "cyan").style.flexShrink = 1;
+                planRows.Add((d, st));
+            }
+            planWarn = Ui.Text(left, "", "small"); planWarn.enableRichText = true; planWarn.style.marginTop = 6;
+
+            // right: every task and step, ticked off, with where it is done
+            var right = Ui.Box(cols, "col", "grow");
+            Ui.Text(right, "TASKS AND STEPS", "section");
+            var scroll = Ui.Add(right, new ScrollView()); scroll.style.maxHeight = 720;
+            planTasks = Ui.Text(scroll, "", "small"); planTasks.enableRichText = true;
+            Ui.Show(planBoard, false);
+        }
+
+        void UpdatePlanBoard()
+        {
+            bool open = m.PlanOpen && !m.Model.Ended;
+            Ui.Show(planBoard, open);
+            if (!open || Time.unscaledTime < planNext) return;
+            planNext = Time.unscaledTime + 0.5f;
+            var mo = m.Model; var plan = m.Plan;
+            int now = MissionPlan.BlockAt(mo.Hour);
+            for (int b = 0; b < planRows.Count; b++)
+            {
+                var (d, st) = planRows[b];
+                d.SetEnabled(b > now);
+                d.SetValueWithoutNotify(MissionPlan.Name(plan.At[b]));
+                bool done = plan.Done(b, mo);
+                var (txt, col) = b > now ? ("upcoming", new Color(0.6f, 0.66f, 0.75f))
+                    : done ? ("done", new Color(0.44f, 0.86f, 0.55f))
+                    : b == now ? ("NOW", new Color(1f, 0.7f, 0.43f))
+                    : plan.At[b] == Activity.Sleep ? ("missed", new Color(0.6f, 0.66f, 0.75f)) : ("overdue", new Color(1f, 0.48f, 0.48f));
+                st.text = txt; st.style.color = col;
+            }
+            var w = plan.Warnings(m.Kit);
+            planWarn.text = w.Count == 0 ? "<color=#6fdc8c>Plan looks good.</color>" : string.Join("\n", w.Select(x => "<color=#ffb46e>! </color>" + x));
+
+            var sb = new System.Text.StringBuilder();
+            var t = mo.Tasks;
+            foreach (var k in t.All)
+            {
+                string state = k.State == TaskState.Passed ? "<color=#6fdc8c>DONE</color>" : k.State == TaskState.Failed ? "<color=#ff7a7a>FAILED</color>"
+                             : k.State == TaskState.Locked ? "<color=#8aa0aa>not open yet</color>" : "<color=#ffb46e>open</color>";
+                string when = k.From > 0f ? $"  <color=#8aa0aa>h{k.From:0}-{Mathf.Min(k.To, MissionModel.DurationH):0}</color>" : "";
+                sb.Append($"<b>Task {k.Id}: {k.Title}</b>  {state}{when}\n<color=#8aa0aa>{k.Location}</color>\n");
+                foreach (var s in k.Steps)
+                {
+                    string where = Station(s.At);
+                    sb.Append(s.Done ? "<color=#6fdc8c>[x]</color> " : "[ ] ").Append(s.Text);
+                    sb.Append(where != null ? $"  <color=#8aa0aa>@ {where}</color>\n" : "  <color=#8aa0aa>(automatic)</color>\n");
+                }
+                sb.Append('\n');
+            }
+            planTasks.text = sb.ToString().TrimEnd();
+        }
+
+        // ================================================================== Stores log board (habitat wall)
+
+        VisualElement stores; float storesNext;
+        readonly List<(Label stock, Label note, Func<MissionModel, (string stock, string note, Severity s)> read)> storeRows
+            = new List<(Label, Label, Func<MissionModel, (string, string, Severity)>)>();
+
+        void BuildStoresPanel()
+        {
+            stores = Ui.Box(root, "screen", "center");
+            var p = Ui.Panel(stores); p.style.width = 900;
+            var head = Ui.Box(p, "row");
+            Ui.Text(head, "STORES LOG", "h1"); Ui.Box(head, "grow");
+            Ui.Button(head, "Close (Esc)", m.ToggleStores);
+            Ui.Text(p, "Everything the outpost has in stock right now. Running low? Call Lunar Gateway from the systems panel (Tab) once comms work.", "small", "muted");
+            var hdr = Ui.Box(p, "table-row");
+            Ui.Text(hdr, "Item", "cell-name", "muted"); Ui.Text(hdr, "In stock", "cell-pw", "muted"); Ui.Text(hdr, "Notes", "cell-wide");
+
+            Severity Lvl(bool crit, bool warn) => crit ? Severity.Critical : warn ? Severity.Warning : Severity.Good;
+            void Row(string name, Func<MissionModel, (string, string, Severity)> read)
+            {
+                var r = Ui.Box(p, "table-row");
+                Ui.Text(r, name, "cell-name");
+                storeRows.Add((Ui.Text(r, "", "cell-pw"), Ui.Text(r, "", "cell-wide"), read));
+            }
+            Row("Water", x =>
+            {
+                float perH = 0.125f + (x.Load("OGS")?.Powered == true ? 0.11f : 0f);
+                return ($"{x.Water:0.0} / {x.WaterCap:0} L", $"uses ~{perH * 24f:0.0} L/day (crew + oxygen maker): {x.Water / perH / 24f:0.0} days left", Lvl(x.Water < 5f, x.Water < 12f));
+            });
+            Row("Food", x => ($"{x.FoodDaysLeft:0.0} days", $"last meal {(x.LastMealHour < 0f ? "never" : $"h{x.LastMealHour:0}")}, {x.MealsEaten} eaten", Lvl(x.FoodDaysLeft < 0.5f, x.FoodDaysLeft < 1f)));
+            Row("Cabin oxygen", x => ($"{x.CabinO2:0.0} / {x.CabinO2Cap:0} kg", $"made {x.O2Produced:0.0} kg, used {x.O2Consumed:0.0} kg, vented {x.O2Vented:0.0} kg", Lvl(x.CabinO2 < 1f, x.CabinO2 < 2f)));
+            Row("CO2 scrubber cartridges", x => !x.Kit.Has("SCR") ? ("none", "no CO2 scrubber packed", Severity.Critical)
+                : ($"{x.CartridgeKg:0.0} kg left", "about 1 kg of CO2 per crew-day", Lvl(x.CartridgeKg < 0.5f, x.CartridgeKg < 1f)));
+            Row("Battery", x => ($"{x.Battery:0.0} / {x.BatteryCap:0} PWh", $"solar {x.Supply:0.0} in, {x.Demand:0.0} out", Lvl(x.BatteryPct < 0.15f, x.BatteryPct < 0.35f)));
+            Row("Spare parts kits", x => ($"{x.Spares}", $"suit integrity {x.SuitIntegrity:0}% (one kit = +50%)", Lvl(false, x.Spares == 0 && x.SuitIntegrity < 60f)));
+            Row("Rock samples", x => ($"{x.SamplesDelivered} / {x.SampleCapacity}", $"stored in the habitat, {m.SamplesAnalyzed} analysed", Severity.Good));
+            Row("Rover battery", x => x.RoverCap <= 0f ? ("no rover", "", Severity.Info) : ($"{x.RoverBattery:0.0} / {x.RoverCap:0} PWh", "charges in the garage zone", Lvl(x.RoverBattery < 0.5f, x.RoverBattery < 1.5f)));
+            Row("Carried by you", x => ($"{x.Inv.Slots.Count} / {x.Inv.Capacity} slots", $"{x.Inv.Kg:0.#} / {Inventory.MaxKg:0} kg{(x.Inv.HasBag ? ", EVA bag" : ", pockets only")}", Severity.Info));
+            Row("Gateway resupply", x => ($"{Resupply.MaxCalls - x.Gateway.Calls} calls left",
+                x.Gateway.Pending.Count == 0 ? (x.Net.Connected ? "no drone on the way" : "comms down: fix the antenna first")
+                                             : "drone arriving h" + string.Join(", h", x.Gateway.Pending.Select(d => d.due.ToString("0"))), x.Net.Connected ? Severity.Good : Severity.Warning));
+            Ui.Show(stores, false);
+        }
+
+        void UpdateStores()
+        {
+            bool open = m.StoresOpen && !m.Model.Ended;
+            Ui.Show(stores, open);
+            if (!open || Time.unscaledTime < storesNext) return;
+            storesNext = Time.unscaledTime + 0.25f;
+            foreach (var (stock, note, read) in storeRows)
+            {
+                var (st, nt, sev) = read(m.Model);
+                stock.text = st; note.text = nt; Colour(stock, sev == Severity.Good ? Severity.Info : sev);
+            }
+        }
+
         // ================================================================== Tasks checklist panel (HUD overlay)
 
         VisualElement tasksPanel; Label tasksLbl; float tasksNext;
@@ -809,31 +961,94 @@ namespace Mohakash
             }
             sb.Append('\n');
 
+            // what to do now, and WHERE: every line names the station, its distance, and the route if it is on the other side of the airlock
             var act = plan.At[now];
-            if (act == Activity.Sleep) sb.Append($"Go to the bunk and press E to sleep. Slept {plan.Slept(now):0.0} / {MissionPlan.SleepNeededH:0} h this block.\n");
-            else if (act == Activity.Chores) sb.Append("Eat at the galley, wash up, and check power and air in the systems panel (Tab).\n");
-            else if (act == Activity.Radiation && t.Get("C").State == TaskState.Passed) sb.Append("Log a reading at the RAD post beside the habitat.\n");
-            else if (act == Activity.Samples && t.Get("C").State == TaskState.Passed) sb.Append("Collect 2 rock samples (cyan beacons) and bring them inside.\n");
-            if (t.Enabled)
+            Target = null;
+            bool evaOk = t.Get("C").State == TaskState.Passed || !t.Enabled || t.AutoPass;
+            if (act == Activity.Sleep) Do(sb, $"Sleep (E at the bunk). Slept {plan.Slept(now):0.0} / {MissionPlan.SleepNeededH:0} h", "Bunk");
+            else if (act == Activity.Chores) Do(sb, "Eat and drink (galley), then check power and air (Tab)", "Galley");
+            else if (act == Activity.Radiation && evaOk && mo.RadReadings == 0) Do(sb, "Log a radiation reading", "Radiation Monitor");
+            else if (act == Activity.Samples && evaOk && !mo.S1Samples)
+                Do(sb, mo.SamplesCarried > 0 && mo.SamplesCarried + mo.SamplesDelivered >= 2 ? "Bring the samples inside" : "Collect a rock sample",
+                   mo.SamplesCarried + mo.SamplesDelivered >= 2 ? "Airlock" : NearestSample());
+            if (t.Enabled && !t.AutoPass)
             {
                 var ids = MissionPlan.TaskIds(act);
                 var cur = ids.Select(c => t.Get(c.ToString())).FirstOrDefault(k => k.State != TaskState.Passed);
                 if (cur != null) AppendTask(sb, cur);
                 // hazard procedures interrupt any plan
                 foreach (var k in new[] { t.Get("E"), t.Get("F") })
-                    if (k.State == TaskState.Active && k != cur) { sb.Append("<color=#ff7a7a><b>ALERT - not in your plan:</b></color>\n"); AppendTask(sb, k); }
+                    if (k.State == TaskState.Active && k != cur) { sb.Append("<color=#ff7a7a><b>ALERT - not in your plan:</b></color>\n"); Target = null; AppendTask(sb, k); }
             }
             tasksLbl.text = sb.ToString().TrimEnd();
         }
 
-        static void AppendTask(System.Text.StringBuilder sb, MissionTask k)
+        /// <summary>The station the plan panel points at; its world marker is highlighted as NEXT.</summary>
+        public Interactable Target { get; private set; }
+
+        Interactable Find(string label)
         {
-            sb.Append($"<b>Task {k.Id}: {k.Title}</b>  ({k.Steps.Count(s => s.Done)}/{k.Steps.Count})\n");
-            if (k.State == TaskState.Locked) { sb.Append("<color=#8aa0aa>Not open yet: finish the earlier tasks first.</color>\n"); return; }
-            int n = 0;
-            foreach (var s in k.Steps)
-                if (!s.Done && n++ < 2) sb.Append("- ").Append(s.Text).Append('\n');
-            if (n > 2) sb.Append($"<color=#8aa0aa>+ {n - 2} more</color>\n");
+            Interactable best = null; float bd = float.MaxValue;
+            foreach (var i in Interactable.All)
+            {
+                if (i.Label != label || !i.isActiveAndEnabled || !i.Available()) continue;
+                float d = Vector3.Distance(m.ActivePosition, i.transform.position);
+                if (d < bd) { bd = d; best = i; }
+            }
+            return best;
+        }
+
+        string NearestSample()
+        {
+            var s = Interactable.All.Where(i => i.Label != null && i.Label.StartsWith("Sample ") && i.Label != "Sample lab" && i.isActiveAndEnabled && i.Available())
+                                    .OrderBy(i => Vector3.Distance(m.ActivePosition, i.transform.position)).FirstOrDefault();
+            return s?.Label;
+        }
+
+        /// <summary>"WHERE" line for a station label: distance when it is on your side of the airlock, else the way there.</summary>
+        string Where(string label)
+        {
+            if (label == null) return "<color=#8aa0aa>happens by itself</color>";
+            var it = Find(label);
+            if (it == null) return label;
+            bool inside = m.Model.Inside;
+            if (Target == null) Target = it.Indoor == inside ? it : Find(inside ? "Airlock door" : "Airlock");   // other side: point at the way through
+            if (it.Indoor && !inside) return $"{label}  <color=#ffb46e>inside the habitat: go in through the airlock</color>";
+            if (!it.Indoor && inside) return $"{label}  <color=#ffb46e>outside: suit up, then the airlock door</color>";
+            return $"{label}  <color=#6fdc8c>{Vector3.Distance(m.ActivePosition, it.transform.position):0} m</color>  <color=#8aa0aa>(look for the NEXT marker)</color>";
+        }
+
+        void Do(System.Text.StringBuilder sb, string what, string where)
+        {
+            sb.Append($"<b>NOW:</b> {what}\n<color=#8aa0aa>WHERE:</color> {Where(where)}\n");
+        }
+
+        static string Station(Spot s) => s switch
+        {
+            Spot.Systems => "Power & life support", Spot.Comms => "Mission Control link", Spot.SuitDock => "Suit dock",
+            Spot.Door => "Airlock door", Spot.Airlock => "Airlock door", Spot.Shelter => "Radiation shelter", Spot.Seis => "Seismometer",
+            _ => null,
+        };
+
+        void AppendTask(System.Text.StringBuilder sb, MissionTask k)
+        {
+            sb.Append($"<b>Task {k.Id}: {k.Title}</b>  <color=#8aa0aa>{k.Steps.Count(s => s.Done)}/{k.Steps.Count} done</color>\n");
+            if (k.State == TaskState.Locked)
+            {
+                string first = k.Id == "D" ? "C (Prepare for EVA)" : "A (Mission readiness checklist)";
+                sb.Append($"<color=#8aa0aa>Not open yet: finish Task {first} first.</color>\n"); return;
+            }
+            var steps = k.Steps.Where(s => !s.Done).ToList();
+            if (steps.Count == 0) return;
+            var st = steps[0];
+            string where = Station(st.At);
+            if (st.Id == "D1" || st.Id == "D2")   // carry / deploy happen by walking, not at a station
+                where = m.Model.SeisCarried ? null : "Seismometer";
+            sb.Append($"<b>NOW:</b> {st.Text}\n");
+            sb.Append($"<color=#8aa0aa>WHERE:</color> {((st.Id == "D1" || st.Id == "D2") && m.Model.SeisCarried ? "walk past the orange 80 m ring, then press E to set it down" : Where(where))}");
+            if (st.At == Spot.Systems) sb.Append("  <color=#8aa0aa>or press Tab anywhere</color>");
+            sb.Append('\n');
+            if (steps.Count > 1) sb.Append($"<color=#8aa0aa>Then: {steps[1].Text}{(steps.Count > 2 ? $"  (+{steps.Count - 2} more)" : "")}</color>\n");
         }
 
         // ================================================================== Habitat panel

@@ -32,6 +32,8 @@ namespace Mohakash
         // ---- scenario fault and test progress
         public Fault Fault; public float PointingErrDeg, CableLossDb;
         public bool Inspected, PathsReviewed, QualityViewed, MapOpened, LinkEstablished, PacketAcked, VoiceOk, TlmOk, SciOk;
+        /// <summary>The outpost starts with a faulty antenna and no link: fix the fault, then establish the link. Needed to reach Earth and Gateway.</summary>
+        public bool Connected => LinkEstablished && Fault == Fault.None && m.Load("COM")?.Powered == true;
         // ---- network state
         public readonly List<CommsNode> Nodes = new List<CommsNode>();
         public readonly List<CommsLink> Links = new List<CommsLink>();
@@ -68,7 +70,7 @@ namespace Mohakash
 
             Nodes.Add(new CommsNode { Id = "EARTH", Name = "Earth / Mission Control", Kind = NodeKind.Earth, Type = "Earth ground network", Services = "Voice, status telemetry, science-data routing" });
             Nodes.Add(new CommsNode { Id = "R1", Name = "Relay R-1", Kind = NodeKind.Relay, Type = "Lunar relay spacecraft (elliptical orbit)", Services = "Store-and-forward relay, S-band to the surface, X-band trunk to Earth" });
-            Nodes.Add(new CommsNode { Id = "GW", Name = "Gateway-class station", Kind = NodeKind.Station, Type = "Lunar-orbiting station (planned)", Services = "None in this scenario", InService = false });
+            Nodes.Add(new CommsNode { Id = "GW", Name = "Lunar Gateway", Kind = NodeKind.Station, Type = "Lunar-orbiting station (planned)", Services = "Cargo drone resupply (Tab > Call Gateway)" });
             Nodes.Add(new CommsNode { Id = "OUT", Name = "First Light Outpost", Kind = NodeKind.Outpost, Type = "Surface station", Services = "Voice, telemetry, science upload; surface UHF" });
             if (rover() != null) Nodes.Add(new CommsNode { Id = "ROVER", Name = "Rover", Kind = NodeKind.Rover, Type = "Surface station (mobile)", Services = "UHF to the outpost, line of sight only" });
             for (int i = 0; i < sites.Length; i++)
@@ -275,6 +277,7 @@ namespace Mohakash
         public string Establish()
         {
             if (m.Load("COM")?.Powered != true) return "Cannot establish: the COM terminal has no power.";
+            if (Fault != Fault.None) return "Cannot establish: the antenna is faulty. Run diagnostics, then re-home the tracker or reseat the feed connector.";
             if (BestRateMbps <= 0f) return "No path to Earth right now. See the paths view for the reason and next window.";
             LinkEstablished = true;
             return $"Link established with Mission Control via {(ViaDirect ? "direct-to-Earth" : "relay R-1")}.";

@@ -32,6 +32,44 @@ namespace Mohakash
         public bool SystemsOpen { get; private set; }
         public Torch Torch { get; private set; }
         public bool InventoryOpen { get; private set; }
+        public bool StoresOpen { get; private set; }
+        public bool PlanOpen { get; private set; }
+
+        // ---- player map marks: G drops one where you stand, clicks on the full map (hold M) place / remove them ----
+        public static readonly (string name, Color col)[] MarkKinds =
+            { ("Flag", new Color(1f, 0.6f, 0.15f)), ("Danger", new Color(1f, 0.3f, 0.28f)), ("Note", new Color(0.4f, 0.85f, 1f)) };
+        public const int MaxMarks = 20;
+        public readonly List<Interactable> Marks = new List<Interactable>();
+        public int MarkKind;
+        int markSerial;
+        Transform marksRoot;
+
+        /// <summary>Marks reuse Interactable for their HUD / map markers; Available=false so E never selects them.</summary>
+        public void AddMark(Vector3 pos, bool indoor)
+        {
+            if (Marks.Count >= MaxMarks) { Ui.Toast($"Map is full ({MaxMarks} marks). Remove one first (G on it, or right-click on the map).", Severity.Info); return; }
+            if (marksRoot == null) marksRoot = new GameObject("Map marks").transform;
+            var (name, col) = MarkKinds[MarkKind];
+            var mk = Interactable.Create($"{name} {++markSerial}", pos, 0f, marksRoot);
+            mk.Available = () => false; mk.Indoor = indoor; mk.MarkerColor = col;
+            Marks.Add(mk);
+            Ui.Toast($"{mk.Label} placed. It shows on the map and in view. Press G on it to remove.", Severity.Info);
+        }
+
+        public bool RemoveMarkNear(Vector3 pos, float radius, bool indoor)
+        {
+            Interactable best = null; float bd = radius;
+            foreach (var mk in Marks)
+            {
+                if (mk.Indoor != indoor) continue;
+                float d = Flat(mk.transform.position - pos).magnitude;
+                if (d <= bd) { bd = d; best = mk; }
+            }
+            if (best == null) return false;
+            Marks.Remove(best); Destroy(best.gameObject);
+            Ui.Toast($"{best.Label} removed.", Severity.Info);
+            return true;
+        }
         public bool InsideView => Model != null && Model.Inside;
         public bool CarryingSeis => Model != null && Model.SeisCarried;
         public float DistanceToHab => Player ? Flat(Player.transform.position - World.AirlockPoint).magnitude : 0f;
@@ -45,7 +83,7 @@ namespace Mohakash
         float ringTimer;
         MinimapSystem Minimap;
         FullMapSystem FullMap;
-        HabitatInterior Interior;
+        public HabitatInterior Interior { get; private set; }
         public int SamplesAnalyzed { get; private set; }
 
         public CommsWorkstation Comms { get; private set; }
@@ -125,6 +163,12 @@ namespace Mohakash
 
             Player = Astronaut.Create(World.AirlockPoint + new Vector3(2.5f, 0.2f, -1.5f));
             Player.transform.rotation = Quaternion.Euler(0, MoonWorld.EarthAzimuth - 25f, 0);
+            Player.HardLanding += speed =>
+            {
+                float dmg = Mathf.Round(4f * (speed - Astronaut.HardLandingSpeed + 1f));
+                Model.SuitIntegrity = Mathf.Max(0f, Model.SuitIntegrity - dmg);
+                Model.Log(Severity.Warning, $"Hard landing ({speed:0.0} m/s): you fell and scuffed the suit, integrity -{dmg:0}%. Land softer: smaller jumps near drops.");
+            };
             Torch = Player.gameObject.AddComponent<Torch>();
             Torch.Init(Cam.transform, () => Model.Inside || Player.Dead, Player.EvaRig);
             if (Kit.Has("ROV-SC"))
@@ -680,6 +724,18 @@ namespace Mohakash
             Ui.Toast(why ?? "EVA bag stowed. You have 4 pocket slots.", why == null ? Severity.Info : Severity.Warning);
         }
 
+        public void TogglePlan()
+        {
+            PlanOpen = !PlanOpen;
+            Game.SetCursorFree(PlanOpen);
+        }
+
+        public void ToggleStores()
+        {
+            StoresOpen = !StoresOpen;
+            Game.SetCursorFree(StoresOpen);
+        }
+
         public void ToggleInventory()
         {
             InventoryOpen = !InventoryOpen;
@@ -699,12 +755,14 @@ namespace Mohakash
 
             if (GameInput.Pause && Ui.ControlsOpen) { Ui.ToggleControls(); GameInput.EndFrame(); return; }
             if (GameInput.Pause && Comms != null && Comms.Open) { Comms.Close(); GameInput.EndFrame(); return; }
-            if (GameInput.Pause) { if (InventoryOpen) ToggleInventory(); else if (SystemsOpen) ToggleSystems(); else SetPaused(!Paused); }
+            if (GameInput.Pause) { if (PlanOpen) TogglePlan(); else if (StoresOpen) ToggleStores(); else if (InventoryOpen) ToggleInventory(); else if (SystemsOpen) ToggleSystems(); else SetPaused(!Paused); }
             if (Paused) { GameInput.EndFrame(); return; }
 
             if (GameInput.Systems) { if (InventoryOpen) ToggleInventory(); ToggleSystems(); }
             if (GameInput.Inventory) { if (SystemsOpen) ToggleSystems(); ToggleInventory(); }
             if (GameInput.Help) Ui.ToggleControls();
+            if (GameInput.Plan) TogglePlan();
+            if (GameInput.Mark && !Player.Dead && !RemoveMarkNear(Player.transform.position, 2f, Model.Inside)) AddMark(Player.transform.position, Model.Inside);
             int sk = GameInput.SpeedKey; if (sk >= 0) SetSpeed(sk);
 
             HandleWorldInput();
@@ -742,7 +800,7 @@ namespace Mohakash
         void HandleWorldInput()
         {
             if (Model.Inside && Model.Resting && GameInput.Move.sqrMagnitude > 0.04f) ToggleRest();   // walking away wakes you up
-            bool canAct = !SystemsOpen && !InventoryOpen && !(Comms != null && Comms.Open) && !Player.Dead;
+            bool canAct = !SystemsOpen && !InventoryOpen && !StoresOpen && !PlanOpen && !(Comms != null && Comms.Open) && !Player.Dead;
             Player.Frozen = !canAct || (Rover != null && Rover.Driving);
 
             Focus = null;
@@ -811,7 +869,7 @@ namespace Mohakash
 
         IEnumerator ShowReportSoon()
         {
-            yield return new WaitForSecondsRealtime(Model.Failed ? 2.5f : 1f);
+            yield return new WaitForSecondsRealtime(Model.Failed ? 4.2f : 1f);   // let the 4 s Dying clip play out
             Game.SetCursorFree(true);
             Ui.ShowReport(Report, Model);
         }

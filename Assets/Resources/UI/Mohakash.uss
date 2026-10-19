@@ -87,6 +87,8 @@
 .marker { position: absolute; align-items: center; translate: -50% -100%; }
 .marker-label { font-size: 15px; background-color: rgba(9, 18, 38, 0.75); padding: 2px 8px; border-radius: 4px; -unity-text-align: middle-center; }
 .marker-pin { width: 10px; height: 10px; rotate: 45deg; margin-top: 3px; }
+.marker-next .marker-label { font-size: 18px; -unity-font-style: bold; background-color: rgba(235, 120, 30, 0.92); color: rgb(255, 255, 255); }
+.marker-next .marker-pin { width: 14px; height: 14px; background-color: rgb(255, 150, 60); }
 .objective { margin-bottom: 3px; }
 /* HUD cards: light glass, no border, same spacing everywhere so the screen stays calm */
 .hud-card { background-color: rgba(6, 10, 18, 0.55); border-width: 0; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }

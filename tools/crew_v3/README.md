@@ -23,3 +23,4 @@ If you replace the astronaut mesh with another static model: put it in `original
 `glbkit.py` now accepts per-vertex smooth weights (`geo.JW = (joints[n,4], weights[n,4])`).
 | `suit_clips.py` | HelmetOff / HelmetOn / WalkBack clips (per-frame IK along a wrist path); used by rig_eva.py and crew_hq.py. |
 | `split_helmet.py` | `python3 split_helmet.py rigged.glb AstronautEVA.glb` - moves the helmet into a rigid `EVA_Helmet` node under Head. |
+| `fall_die.py` | `python3 fall_die.py ../../Assets/Resources/Models/AstronautEVA.glb ../../Assets/Resources/Models/CrewCasual.glb` - appends the Fall (3.2 s trip, hands-down landing, get up) and Dying (4.0 s helmet grab, kneel, topple, still) clips to the rigged GLBs; re-running replaces them. Needs numpy. |

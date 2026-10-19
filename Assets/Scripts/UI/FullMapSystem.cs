@@ -23,6 +23,8 @@ namespace Mohakash
         float fade;
         readonly List<Label> labels = new List<Label>();
         readonly List<Vector3> trail = new List<Vector3>();
+        readonly List<Button> kindBtns = new List<Button>();
+        bool freedCursor;
 
         static readonly Color Cyan = new Color(0.30f, 0.90f, 1f);
         static readonly Color Orange = new Color(1f, 0.58f, 0.18f);
@@ -43,7 +45,13 @@ namespace Mohakash
             root.Add(overlay);
 
             mapEl = new VisualElement { name = "full-map-image" };
-            mapEl.pickingMode = PickingMode.Ignore;
+            mapEl.pickingMode = PickingMode.Position;   // left-click = place a mark, right-click = remove the nearest
+            mapEl.RegisterCallback<PointerDownEvent>(e =>
+            {
+                var w = m.World.OnGround(e.localPosition.x / Px * 2f * R - R, R - e.localPosition.y / Px * 2f * R);
+                if (e.button == 0) m.AddMark(w, false);
+                else if (e.button == 1 && !m.RemoveMarkNear(w, 18f / MToPx(1f), false)) m.Ui.Toast("No mark there to remove.", Severity.Info);
+            });
             mapEl.style.width = Px; mapEl.style.height = Px;
             mapEl.style.flexShrink = 0;
             Border(mapEl, 2f, new Color(0.35f, 0.55f, 0.75f, 0.95f));
@@ -83,6 +91,18 @@ namespace Mohakash
             side.Add(Legend(new Color(1f, 0.9f, 0.25f), "Rover"));
             side.Add(Legend(new Color(0.75f, 0.55f, 1f), "Lander"));
             side.Add(Legend(Color.white, "You (arrow = facing) and your path"));
+
+            var mk = Text("YOUR MARKS", 14, Color.white, true); mk.style.marginTop = 18; side.Add(mk);
+            side.Add(Text("Left-click the map to place, right-click to remove. G drops one where you stand.", 12, new Color(0.7f, 0.78f, 0.9f), false));
+            var kinds = new VisualElement(); kinds.style.flexDirection = FlexDirection.Row; kinds.style.marginTop = 6; side.Add(kinds);
+            for (int i = 0; i < Mission1.MarkKinds.Length; i++)
+            {
+                int k = i;
+                var b = new Button(() => m.MarkKind = k) { text = Mission1.MarkKinds[k].name };
+                b.AddToClassList("btn"); b.AddToClassList("btn-small");
+                b.style.color = Mission1.MarkKinds[k].col;
+                kindBtns.Add(b); kinds.Add(b);
+            }
         }
 
         // ── per-frame ───────────────────────────────────────────────────────────
@@ -96,6 +116,14 @@ namespace Mohakash
 
             bool want = GameInput.MapHeld && !m.Model.Ended && !m.Model.Inside;
             fade = Mathf.MoveTowards(fade, want ? 1f : 0f, Time.unscaledDeltaTime * 7f);
+            // free the mouse while the map is held so it can be clicked; give it back to the camera on release
+            if (want && !freedCursor) { freedCursor = true; Game.SetCursorFree(true); }
+            else if (!want && freedCursor)
+            {
+                freedCursor = false;
+                if (!m.Paused && !m.SystemsOpen && !m.InventoryOpen && !m.StoresOpen) Game.SetCursorFree(false);
+            }
+            for (int i = 0; i < kindBtns.Count; i++) kindBtns[i].EnableInClassList("extra-on", i == m.MarkKind);
             if (fade <= 0f) { overlay.style.display = DisplayStyle.None; return; }
             if (overlay.resolvedStyle.display == DisplayStyle.None || overlay.style.display == DisplayStyle.None)
             {

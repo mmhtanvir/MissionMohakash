@@ -1,5 +1,9 @@
 # Unity generated
 [Ll]ibrary/
+# Library/Temp are symlinks to *.nosync folders so iCloud Drive never syncs Unity's cache (its duplicate '* 2' files hung Unity)
+/Library
+/Temp
+*.nosync/
 [Tt]emp/
 [Oo]bj/
 [Bb]uild/

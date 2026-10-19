@@ -425,6 +425,15 @@ namespace Mohakash
             Station("Power & life support", new Vector3(-1.0f, 0, 3.0f), 2.5f, new Color(1f, 0.85f, 0.3f),
                 () => $"Open power & life support (battery {m.Model.Battery:0}, cabin O2 {m.Model.CabinO2:0.0})", m.ToggleSystems);
 
+            // ── stores log board (west wall, between comms and the bunk) ─────────────
+            Screen("Stores log board", new Vector3(-5.93f, 1.5f, -0.2f), new Vector3(0.05f, 0.9f, 1.4f), new Color(1f, 0.7f, 0.2f), 1);
+            Box("Board frame", new Vector3(-5.96f, 1.5f, -0.2f), new Vector3(0.04f, 1.0f, 1.5f), wallDark, false);
+            Station("Stores log", new Vector3(-5.0f, 0, -0.2f), 1.1f, new Color(1f, 0.75f, 0.3f), () => "Read the stores log (what we have in stock)", m.ToggleStores);
+
+            // ── plan board (north wall, between the console screens and the lab) ─────
+            Screen("Plan board", new Vector3(1.45f, 1.4f, 4.3f), new Vector3(0.9f, 0.6f, 0.05f), new Color(0.3f, 1f, 0.5f), 0);
+            Station("Plan board", new Vector3(1.45f, 0, 3.5f), 0.9f, new Color(0.3f, 1f, 0.5f), () => "Open the mission plan and task list (or press J anywhere)", m.TogglePlan);
+
             // ── sample lab (north wall, east) ────────────────────────────────────────
             Box("Lab bench", new Vector3(3.4f, 0.48f, 3.95f), new Vector3(2.6f, 0.95f, 0.8f), white);
             Box("Lab cabinet", new Vector3(3.4f, 2.1f, 4.25f), new Vector3(2.6f, 0.7f, 0.35f), steel, false);

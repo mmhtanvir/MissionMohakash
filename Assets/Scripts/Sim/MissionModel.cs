@@ -521,7 +521,8 @@ namespace Mohakash
                 if (Battery < ShadowEnergyNeeded) Cause($"Entered the 6 h shadow window with {Battery:0.0} PWh stored but ~{ShadowEnergyNeeded:0.0} PWh needed");
             }
             Check(Gateway.Calls < Resupply.MaxCalls && Resupply.Items.Any(i => i.Low(this)), "gateway-hint", Severity.Info,
-                "Supplies running low: you can call Lunar Gateway for a cargo drone (Tab > Call Gateway).");
+                Net.Connected ? "Supplies running low: you can call Lunar Gateway for a cargo drone (Tab > Call Gateway)."
+                              : "Supplies running low. Fix the comms antenna first, then call Lunar Gateway for a cargo drone.");
             Check(Hydration < 25f, "thirsty", Severity.Warning, "You are getting dehydrated. Drink at the water dispenser in the galley.");
             Check(Hunger < 25f, "hungry", Severity.Warning, "You are getting hungry. Eat a meal at the galley.");
             if (Hour >= ShadowEnd) Latch("shadow-end", Severity.Good, "Sunlight is back on the ridge.");

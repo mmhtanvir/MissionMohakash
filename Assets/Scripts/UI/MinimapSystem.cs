@@ -47,6 +47,121 @@ namespace Mohakash
             = new List<(VisualElement, System.Func<Vector3>, System.Func<bool>)>();
 
         float range = DefaultRange;    // current metres-per-half-map
+        readonly Dictionary<Interactable, VisualElement> markDots = new Dictionary<Interactable, VisualElement>();
+
+        // ── Inside: habitat floor plan (12 x 9 m room, north up) ────────────
+        const float RoomPx = 32f;      // pixels per metre
+        VisualElement insideWrap, room, insidePlayer;
+        readonly List<(Rect r, float h)> furniture = new List<(Rect, float)>();   // top-down footprints in room metres, h = height
+        readonly Dictionary<Interactable, (VisualElement box, Label lbl)> roomIcons = new Dictionary<Interactable, (VisualElement, Label)>();
+
+        Vector2 RoomPos(Vector3 world)
+        {
+            var l = world - HabitatInterior.Origin;
+            return new Vector2((l.x + HabitatInterior.W / 2f) * RoomPx, (HabitatInterior.D / 2f - l.z) * RoomPx);
+        }
+
+        void BuildInsideUi(VisualElement hudRoot)
+        {
+            insideWrap = new VisualElement();
+            insideWrap.AddToClassList("hud-card");
+            insideWrap.style.position = Position.Absolute; insideWrap.style.right = 18; insideWrap.style.bottom = 18;
+            var title = new Label("HABITAT MAP   G = mark this spot");
+            title.AddToClassList("card-title");
+            insideWrap.Add(title);
+            room = new VisualElement();
+            room.style.width = HabitatInterior.W * RoomPx; room.style.height = HabitatInterior.D * RoomPx;
+            room.style.backgroundColor = new Color(0.08f, 0.11f, 0.16f, 0.9f);
+            room.style.borderTopWidth = room.style.borderBottomWidth = room.style.borderLeftWidth = room.style.borderRightWidth = 2f;
+            var wall = new Color(0.55f, 0.65f, 0.8f);
+            room.style.borderTopColor = room.style.borderBottomColor = room.style.borderLeftColor = room.style.borderRightColor = wall;
+            insideWrap.Add(room);
+            room.generateVisualContent += DrawFurniture;
+            // airlock gap in the south wall
+            var gap = new VisualElement();
+            gap.style.position = Position.Absolute; gap.style.height = 4; gap.style.width = 1.4f * RoomPx;
+            gap.style.left = (HabitatInterior.W / 2f - 0.7f) * RoomPx; gap.style.bottom = -3;
+            gap.style.backgroundColor = new Color(0.3f, 1f, 0.5f);
+            room.Add(gap);
+            var n = new Label("N"); n.style.position = Position.Absolute; n.style.top = 2; n.style.right = 6; n.style.fontSize = 11; n.style.color = new Color(1, 1, 1, 0.6f);
+            room.Add(n);
+            insidePlayer = MakeDot(room, 16, Color.white, "▲", "You");
+            Ui.Show(insideWrap, false);
+            hudRoot.Add(insideWrap);
+        }
+
+        /// <summary>Reads the real furniture footprints from the built interior once (every renderer that stands on the floor).</summary>
+        void ScanFurniture()
+        {
+            if (m.Interior == null) return;
+            var o = HabitatInterior.Origin;
+            foreach (var rend in m.Interior.GetComponentsInChildren<Renderer>())
+            {
+                var b = rend.bounds;
+                float x0 = b.min.x - o.x, x1 = b.max.x - o.x, z0 = b.min.z - o.z, z1 = b.max.z - o.z, y0 = b.min.y - o.y, h = b.max.y - o.y;
+                if (y0 > 1.2f || h < 0.25f) continue;                                            // ceiling / wall-hung items, floor strips
+                if (x1 - x0 > HabitatInterior.W * 0.8f || z1 - z0 > HabitatInterior.D * 0.8f) continue;   // floor, walls, rails
+                if (x1 < -HabitatInterior.W / 2f || x0 > HabitatInterior.W / 2f || z1 < -HabitatInterior.D / 2f || z0 > HabitatInterior.D / 2f) continue;   // airlock tunnel
+                furniture.Add((Rect.MinMaxRect(x0, z0, x1, z1), h));
+            }
+            room.MarkDirtyRepaint();
+        }
+
+        void DrawFurniture(MeshGenerationContext mgc)
+        {
+            var pt = mgc.painter2D;
+            // faint 1 m grid
+            pt.lineWidth = 1f; pt.strokeColor = new Color(1f, 1f, 1f, 0.05f);
+            for (float x = 1f; x < HabitatInterior.W; x += 1f) { pt.BeginPath(); pt.MoveTo(new Vector2(x * RoomPx, 0)); pt.LineTo(new Vector2(x * RoomPx, HabitatInterior.D * RoomPx)); pt.Stroke(); }
+            for (float z = 1f; z < HabitatInterior.D; z += 1f) { pt.BeginPath(); pt.MoveTo(new Vector2(0, z * RoomPx)); pt.LineTo(new Vector2(HabitatInterior.W * RoomPx, z * RoomPx)); pt.Stroke(); }
+            // furniture: taller = lighter, so lockers and counters read differently from stools and crates
+            foreach (var (r, h) in furniture)
+            {
+                float k = Mathf.InverseLerp(0.3f, 2.4f, h);
+                pt.fillColor = Color.Lerp(new Color(0.22f, 0.28f, 0.36f, 0.95f), new Color(0.45f, 0.53f, 0.64f, 0.95f), k);
+                pt.strokeColor = new Color(0.65f, 0.75f, 0.88f, 0.5f);
+                float x0 = (r.xMin + HabitatInterior.W / 2f) * RoomPx, x1 = (r.xMax + HabitatInterior.W / 2f) * RoomPx;
+                float y0 = (HabitatInterior.D / 2f - r.yMax) * RoomPx, y1 = (HabitatInterior.D / 2f - r.yMin) * RoomPx;
+                pt.BeginPath(); pt.MoveTo(new Vector2(x0, y0)); pt.LineTo(new Vector2(x1, y0)); pt.LineTo(new Vector2(x1, y1)); pt.LineTo(new Vector2(x0, y1)); pt.ClosePath();
+                pt.Fill(); pt.Stroke();
+            }
+        }
+
+        void TickInside()
+        {
+            if (furniture.Count == 0) ScanFurniture();
+            var target = m.Ui.Target;
+            foreach (var it in Interactable.All)
+            {
+                if (it == null || !it.Indoor || it.Label == null) continue;
+                if (!roomIcons.TryGetValue(it, out var ic))
+                {
+                    var box = new VisualElement(); box.style.position = Position.Absolute; box.style.flexDirection = FlexDirection.Row; box.style.alignItems = Align.Center;
+                    var dot = new VisualElement(); dot.style.width = 8; dot.style.height = 8; dot.style.backgroundColor = it.MarkerColor;
+                    dot.style.borderTopLeftRadius = dot.style.borderTopRightRadius = dot.style.borderBottomLeftRadius = dot.style.borderBottomRightRadius = 4;
+                    box.Add(dot);
+                    var lbl = new Label(); lbl.style.fontSize = 10; lbl.style.marginLeft = 2; lbl.style.color = new Color(0.85f, 0.9f, 1f);
+                    box.Add(lbl);
+                    room.Add(box);
+                    roomIcons[it] = ic = (box, lbl);
+                }
+                bool next = it == target, mark = m.Marks.Contains(it);
+                var p = RoomPos(it.transform.position);
+                ic.box.style.left = p.x - 4; ic.box.style.top = p.y - 6;
+                ic.lbl.text = next ? "NEXT: " + it.Label : it.Label;
+                ic.lbl.style.color = next ? new Color(1f, 0.6f, 0.2f) : mark ? it.MarkerColor : new Color(0.85f, 0.9f, 1f, 0.85f);
+                ic.lbl.style.unityFontStyleAndWeight = next || mark ? FontStyle.Bold : FontStyle.Normal;
+                Ui.Show(ic.box, it.isActiveAndEnabled);
+                if (next) ic.box.BringToFront();
+            }
+            foreach (var gone in new List<Interactable>(roomIcons.Keys))
+                if (gone == null || !Interactable.All.Contains(gone)) { roomIcons[gone].box.RemoveFromHierarchy(); roomIcons.Remove(gone); }
+
+            var pp = RoomPos(m.Player.transform.position);
+            insidePlayer.style.left = pp.x - 8; insidePlayer.style.top = pp.y - 8;
+            insidePlayer.style.rotate = new Rotate(Angle.Degrees(m.Player.transform.eulerAngles.y));
+            insidePlayer.BringToFront();
+        }
 
         // ── Public API ──────────────────────────────────────────────────────
 
@@ -55,6 +170,7 @@ namespace Mohakash
         {
             m = mission;
             BuildUi(hudRoot);
+            BuildInsideUi(hudRoot);
             RegisterIcons();
         }
 
@@ -64,7 +180,8 @@ namespace Mohakash
             if (m == null || m.World == null || m.Player == null) return;
 
             if (mapContainer != null && mapContainer.parent != null) Ui.Show(mapContainer.parent, !m.Model.Inside);
-            if (m.Model != null && m.Model.Inside) return;
+            Ui.Show(insideWrap, m.Model.Inside);
+            if (m.Model != null && m.Model.Inside) { TickInside(); return; }
             Vector3 playerPos = m.Player.transform.position;
             float   playerYaw = m.Player.transform.eulerAngles.y;
 
@@ -95,6 +212,16 @@ namespace Mohakash
                 else if (m.Model.SeisCarried)
                     PlaceDot(seisDot, playerPos + m.Player.transform.forward * 0.5f, playerPos);
             }
+
+            // ── Player marks (outdoor) ─────────────────────────────────
+            foreach (var mk in m.Marks)
+            {
+                if (mk.Indoor) continue;
+                if (!markDots.TryGetValue(mk, out var md)) markDots[mk] = md = MakeDot(mapContainer, 11, mk.MarkerColor, "⚑", mk.Label);
+                PlaceDot(md, mk.transform.position, playerPos);
+            }
+            foreach (var gone in new List<Interactable>(markDots.Keys))
+                if (gone == null || !m.Marks.Contains(gone)) { markDots[gone].RemoveFromHierarchy(); markDots.Remove(gone); }
 
             // ── Update generic icons ───────────────────────────────────
             foreach (var (dot, getPos, getVis) in icons)

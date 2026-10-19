@@ -151,6 +151,9 @@ public class SimTests
         var m = new MissionModel(Catalog.Recommended());
         var water = Resupply.Items[0]; var battery = Resupply.Items.First(i => i.Name.StartsWith("Battery"));
         m.Water = 5f; float cap = m.BatteryCap;
+        Assert.IsNotNull(m.Gateway.Request(m, new List<SupplyItem> { water }));            // comms start disconnected
+        m.Net.LinkEstablished = true;                                                       // (fault is only rolled by Net.Init)
+        m.Load("COM").Enabled = true; m.Advance(0.1f);                                     // COM terminal powered, as from the power panel
         Assert.IsNotNull(m.Gateway.Request(m, new List<SupplyItem> { battery, water }));   // 35 kg > drone
         Assert.IsNull(m.Gateway.Request(m, new List<SupplyItem> { water }));
         m.Advance(Resupply.DelayH - 0.5f);

@@ -46,6 +46,9 @@ namespace Mohakash
         public static bool Inventory => Down(Key.F);
         public static bool Torch => Down(Key.T);
         public static bool MapHeld => Held(Key.M);
+        public static bool Mark => Down(Key.G);
+        public static bool Plan => Down(Key.J);
+        public static bool RightClick => M != null && M.rightButton.wasPressedThisFrame;
         public static bool Pause => Down(Key.Escape);
         public static bool Help => Down(Key.H) || Down(Key.F1);
         public static bool Click => M != null && M.leftButton.wasPressedThisFrame;

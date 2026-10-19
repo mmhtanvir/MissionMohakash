@@ -50,6 +50,7 @@ namespace Mohakash
         public string Request(MissionModel m, List<SupplyItem> cart)
         {
             if (cart.Count == 0) return "Pick at least one item.";
+            if (!m.Net.Connected) return "Comms are down: fix the antenna and establish the link at the comms workstation first.";
             if (Calls >= MaxCalls) return $"Gateway has no more drones for you ({MaxCalls} calls used).";
             float kg = cart.Sum(i => i.Kg);
             if (kg > DroneKg) return $"Too heavy for the drone: {kg:0} / {DroneKg:0} kg.";

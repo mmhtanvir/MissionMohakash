@@ -60,7 +60,11 @@ namespace Mohakash
         Transform cam;
 
         Vector3 velocity, horizVel, prevPosition;
-        float ungroundedTime, landTimer, oneShotTimer, landSquashTimer;
+        float ungroundedTime, landTimer, oneShotTimer, landSquashTimer, fallTimer;
+        /// <summary>Raised with the impact speed (m/s) when a landing is hard enough to knock the astronaut over (Fall clip).</summary>
+        public event Action<float> HardLanding;
+        public const float HardLandingSpeed = 3.6f;   // ~4 m drop in lunar gravity; a normal moon jump lands at ~2.4 m/s
+        public bool Fallen => fallTimer > 0f;
         bool wasGrounded, isRunning, jumpPlayed;
         const float LandSquashDur = 0.22f;
 
@@ -167,7 +171,7 @@ namespace Mohakash
             if (Dead) return;
             Dead = true; ForceStandUp(); CancelAct();
             if (held) held.SetActive(false);
-            Rig?.Play("Death", 0.2f, 1f, true);
+            Rig?.Play(Rig != null && Rig.Has("Dying") ? "Dying" : "Death", 0.2f, 1f, true);
         }
 
         public void Teleport(Vector3 p)
@@ -749,7 +753,7 @@ namespace Mohakash
             if (bed != BedState.None) { UpdateBed(dt); return; }
             if (act != Act.None) { UpdateAct(dt); return; }
 
-            Vector2 input = Frozen ? Vector2.zero : GameInput.Move;
+            Vector2 input = Frozen || fallTimer > 0f ? Vector2.zero : GameInput.Move;
             Vector3 fwd   = cam ? Vector3.ProjectOnPlane(cam.forward, Vector3.up).normalized : Vector3.forward;
             Vector3 right = cam ? Vector3.ProjectOnPlane(cam.right,   Vector3.up).normalized : Vector3.right;
             Vector3 moveDir = fwd * input.y + right * input.x;
@@ -762,7 +766,7 @@ namespace Mohakash
             if (grounded && velocity.y < 0f) velocity.y = -1f;
             ungroundedTime = grounded ? 0f : ungroundedTime + dt;
 
-            if (grounded && !Frozen && GameInput.Jump)
+            if (grounded && !Frozen && fallTimer <= 0f && GameInput.Jump)
             {
                 velocity.y = Indoors ? Mathf.Sqrt(2f * EarthGravity * 0.45f)   // ~0.45 m hop indoors
                                    : Mathf.Sqrt(2f * MoonGravity * 1.8f);   // ~1.8 m apex on the Moon
@@ -775,6 +779,7 @@ namespace Mohakash
             float accel = !grounded ? 3f : (targetVel.sqrMagnitude > horizVel.sqrMagnitude ? 11f : 15f);
             horizVel = Vector3.MoveTowards(horizVel, targetVel, accel * dt);
             Vector3 horizontal = horizVel;
+            float impact = -velocity.y;
             cc.Move((horizontal + Vector3.up * velocity.y) * dt);
 
             Vector3 faceDir = moveDir.sqrMagnitude > 0.01f ? moveDir : (horizVel.sqrMagnitude > 0.25f ? horizVel : Vector3.zero);
@@ -786,6 +791,13 @@ namespace Mohakash
 
             bool justLanded = !wasGrounded && grounded;
             if (justLanded && ungroundedTime < 0.001f) { landTimer = 0.22f; landSquashTimer = LandSquashDur; }
+            if (justLanded && !Indoors && impact > HardLandingSpeed && Rig != null && Rig.Has("Fall"))
+            {
+                fallTimer = 3.2f; horizVel *= 0.3f;   // trip forward, lie a moment, get back up
+                Rig.Play("Fall", 0.08f, 1f, true);
+                HardLanding?.Invoke(impact);
+            }
+            fallTimer -= dt;
             wasGrounded = grounded;
             landTimer -= dt; oneShotTimer -= dt;
             bool airborne = ungroundedTime > 0.14f;
@@ -793,7 +805,8 @@ namespace Mohakash
             var rig = Rig;
             if (rig != null)
             {
-                if (airborne)
+                if (fallTimer > 0f) { /* Fall clip is playing */ }
+                else if (airborne)
                 {
                     if (!jumpPlayed) { rig.Play("Jump", 0.08f, 1f, true); jumpPlayed = true; }
                 }
