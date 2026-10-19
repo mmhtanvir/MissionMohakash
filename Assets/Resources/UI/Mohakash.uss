@@ -66,12 +66,12 @@
 .bar-fill.info { background-color: rgb(80, 215, 230); }
 
 /* HUD */
-.hud-top { position: absolute; top: 12px; left: 290px; right: 12px; justify-content: center; }
+.hud-top { position: absolute; top: 12px; left: 324px; right: 12px; justify-content: center; }
 .stat { margin: 0 10px; align-items: center; }
 .stat-name { font-size: 14px; color: rgb(150, 165, 190); }
 .stat-value { font-size: 22px; -unity-font-style: bold; }
-.hud-left { position: absolute; top: 12px; left: 12px; width: 270px; }
-.hud-right { position: absolute; top: 104px; right: 12px; width: 420px; }
+.hud-left { position: absolute; top: 12px; left: 12px; width: 300px; }
+.hud-right { position: absolute; top: 104px; right: 12px; width: 340px; }
 .hud-bottom { position: absolute; bottom: 14px; left: 0; right: 0; align-items: center; }
 .hud-alerts { position: absolute; bottom: 14px; left: 12px; width: 560px; }
 .alert { margin-top: 4px; padding: 6px 10px; border-radius: 6px; background-color: rgba(9, 18, 38, 0.85); }
@@ -88,7 +88,23 @@
 .marker-label { font-size: 15px; background-color: rgba(9, 18, 38, 0.75); padding: 2px 8px; border-radius: 4px; -unity-text-align: middle-center; }
 .marker-pin { width: 10px; height: 10px; rotate: 45deg; margin-top: 3px; }
 .objective { margin-bottom: 3px; }
-.eva { position: absolute; bottom: 90px; right: 12px; width: 380px; }
+/* HUD cards: light glass, no border, same spacing everywhere so the screen stays calm */
+.hud-card { background-color: rgba(6, 10, 18, 0.55); border-width: 0; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.card-title { font-size: 13px; letter-spacing: 2px; color: rgb(150, 165, 190); -unity-font-style: bold; margin-bottom: 6px; }
+.card-divider { height: 1px; background-color: rgba(255, 255, 255, 0.08); margin: 8px 0; }
+.hud-card .small { font-size: 15px; }
+.tiny { font-size: 12px; }
+.vital { margin-top: 2px; }
+.bar-thin { height: 5px; border-radius: 3px; margin-top: 3px; margin-bottom: 5px; }
+.bar-thin .bar-fill { border-radius: 3px; }
+
+/* Dropdowns (72 h planner): dark field, readable text */
+.unity-base-popup-field__input { background-color: rgb(22, 34, 60); border-color: rgba(120, 160, 220, 0.45); border-radius: 6px; color: rgb(236, 241, 250); padding: 4px 10px; }
+.unity-base-popup-field__text { color: rgb(236, 241, 250); }
+.unity-base-popup-field__arrow { -unity-background-image-tint-color: rgb(255, 150, 60); }
+.unity-base-dropdown__container-inner { background-color: rgb(16, 26, 48); border-color: rgba(120, 160, 220, 0.45); }
+.unity-base-dropdown__label { color: rgb(236, 241, 250); font-size: 17px; }
+.unity-base-dropdown__item:hover { background-color: rgba(255, 140, 40, 0.35); }
 
 /* Screens */
 .card { width: 380px; margin: 8px; }

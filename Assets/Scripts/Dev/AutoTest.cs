@@ -69,15 +69,16 @@ namespace Mohakash
             Mission1 m = null;
             while ((m = FindAnyObjectByType<Mission1>()) == null) yield return null;
             yield return Wait(2f);
-            if (full) yield return Shot("02_briefing");
-            m.Ui.TestAdvance(null);
-            yield return Wait(1f);
-            if (full) yield return Shot("03_loadout");
-            m.Ui.TestAdvance(kit);
-            yield return Wait(1.5f);   // loadout fade -> 72 h planner
-            if (full) yield return Shot("03b_planner");
-            m.Ui.TestAdvance(null);    // suggested plan
-            while (m.Current != Mission1.Phase.Operations) yield return null;
+            // briefing -> loadout -> 72 h planner -> launch. Each screen's hook fires once (a stale hook would launch twice).
+            int screen = 0;
+            for (float t0 = Time.realtimeSinceStartup; m.Current != Mission1.Phase.Operations && Time.realtimeSinceStartup - t0 < 60f; )
+            {
+                var advance = m.Ui.TestAdvance; m.Ui.TestAdvance = null;
+                if (advance == null) { yield return null; continue; }   // fading between screens
+                if (full) yield return Shot($"0{2 + screen++}_prelaunch");
+                advance(kit);   // only the loadout uses the kit; briefing and planner ignore it
+                yield return Wait(1.5f);
+            }
             m.Model.Tasks.AutoPass = true;   // scripted runs skip the guided procedures (Tasks A-G) so the objectives can be reached by teleport
             yield return Wait(2.5f);
 

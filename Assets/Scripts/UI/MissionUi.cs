@@ -12,7 +12,7 @@ namespace Mohakash
         Mission1 m;
         /// <summary>AutoTest hook: advances the current pre-launch screen (briefing -> loadout -> launch).</summary>
         public Action<Loadout> TestAdvance;
-        VisualElement root, hud, markers, alerts, systems, inside, pause, fade, banner;
+        VisualElement root, hud, markers, alerts, systems, pause, fade, banner, leftCol;
         /// <summary>Exposes the root UI element so MinimapSystem can attach its panel.</summary>
         public VisualElement Root => root;
         Label bannerText, promptText, clockText, hintText;
@@ -46,7 +46,7 @@ namespace Mohakash
         readonly List<(Button btn, PowerLoad load)> loadButtons = new List<(Button, PowerLoad)>();
         readonly List<(Label lbl, PowerLoad load)> loadStates = new List<(Label, PowerLoad)>();
         readonly List<(VisualElement dot, PowerLoad load)> loadDots = new List<(VisualElement, PowerLoad)>();
-        Label sysSummary, sysShadow, insideStatus; Button ogsBtn, restBtn, repairBtn;
+        Label sysSummary, sysShadow; Button ogsBtn;
         VisualElement inventory; Label invSeis, invSamples, invStored, invTorchState; Button invTorchBtn;
         readonly List<(VisualElement box, Label name, Label count)> invSlots = new List<(VisualElement, Label, Label)>();
         VisualElement invWeightRow, invWeightFill; Label invWeight;
@@ -290,7 +290,7 @@ namespace Mohakash
 
             // Top bar: life-critical + time
             var top = Ui.Box(hud, "hud-top", "row");
-            var tp = Ui.Panel(top, "row"); tp.style.paddingTop = 8; tp.style.paddingBottom = 8;
+            var tp = Ui.Panel(top, "row", "hud-card"); tp.style.paddingTop = 8; tp.style.paddingBottom = 8;
             foreach (var (key, name) in new[] { ("power", "POWER PW (in/out)"), ("battery", "BATTERY"), ("o2", "CABIN O2"), ("water", "WATER"), ("food", "FOOD"), ("co2", "CO2"), ("sun", "SUN") })
             {
                 var s = Ui.Box(tp, "stat", "col");
@@ -307,48 +307,44 @@ namespace Mohakash
                 b.userData = val; speedButtons.Add(b);
             }
 
-            // Left: astronaut
-            var left = Ui.Panel(hud, "hud-left");
-            Ui.Text(left, "ASTRONAUT", "h3");
-            foreach (var (key, name) in new[] { ("health", "Health"), ("hunger", "Hunger (fed)"), ("hydration", "Hydration"), ("fatigue", "Fatigue"), ("dose", "Dose (game-mSv)"), ("suit", "Suit integrity") })
-            {
-                var r = Ui.Box(left, "row"); Ui.Text(r, name, "small", "grow"); var v = Ui.Text(r, "", "small");
-                var b = Ui.Bar(left); b.bar.style.marginBottom = 6;
-                bars[key] = (b.fill, v);
-            }
+            // Left column: stacked cards (vitals, EVA suit when outside, my plan) so nothing overlaps
+            leftCol = Ui.Box(hud, "hud-left", "col");
+            var left = Ui.Panel(leftCol, "hud-card");
+            Ui.Text(left, "ASTRONAUT", "card-title");
+            foreach (var (key, name) in new[] { ("health", "Health"), ("hunger", "Hunger"), ("hydration", "Hydration"), ("fatigue", "Fatigue"), ("dose", "Dose (game-mSv)"), ("suit", "Suit integrity"), ("evaTime", "Suit EVA time") })
+                VitalRow(left, key, name);
+
+            // EVA card (shown outside only)
+            eva = Ui.Panel(leftCol, "hud-card");
+            Ui.Text(eva, "EVA  -  SUIT A", "card-title");
+            foreach (var (key, name) in new[] { ("sO2", "Suit O2"), ("sBatt", "Suit battery"), ("sCO2", "CO2 absorber") })
+                VitalRow(eva, key, name);
+            evaWalk = Ui.Text(eva, "", "small", "muted");
 
             // Right: link + objectives
-            var right = Ui.Panel(hud, "hud-right");
+            var right = Ui.Panel(hud, "hud-right", "hud-card");
 
             // Lunar day clock widget + label row
             var clockRow = Ui.Box(right, "row"); clockRow.style.marginBottom = 8; clockRow.style.alignItems = Align.Center;
             lunarWidget = new LunarDayWidget();
             clockRow.Add(lunarWidget);
             var clockInfo = Ui.Box(clockRow, "col"); clockInfo.style.marginLeft = 10;
-            Ui.Text(clockInfo, "LUNAR DAY", "small", "muted");
+            Ui.Text(clockInfo, "LUNAR DAY", "card-title");
             stats["lunarPhase"] = Ui.Text(clockInfo, "", "small");
             stats["lunarNight"] = Ui.Text(clockInfo, "", "small", "cyan");
 
             var link = Ui.Box(right, "row"); var linkDot = Ui.Dot(link, Severity.Good);
-            stats["link"] = Ui.Text(link, "", "small");            Ui.Text(right, "OBJECTIVES", "h3");
+            stats["link"] = Ui.Text(link, "", "small", "muted");
+            Ui.Box(right, "card-divider");
+            Ui.Text(right, "OBJECTIVES", "card-title");
             var mo = m.Model;
-            AddObjective(right, () => mo.P1Seismometer, () => $"Seismometer >= 80 m, powered 24 h  ({mo.SeisGoodHours:0.0}/24 h{(mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance ? ", TOO CLOSE" : "")}){Planned(Activity.Seismometer)}");
-            AddObjective(right, () => mo.P2Radiation, () => $"Log 1 radiation reading  ({mo.RadReadings}/1){Planned(Activity.Radiation)}");
-            AddObjective(right, () => mo.P3Survive, () => $"Survive 72 h  ({mo.Hour:0}/72 h)");
-            AddObjective(right, () => mo.S1Samples, () => $"Optional: 2 regolith samples ({mo.SamplesDelivered} delivered, {mo.SamplesCarried} carried){Planned(Activity.Samples)}", true);
-            hintText = Ui.Text(right, "", "small", "cyan"); hintText.style.marginTop = 6;
-            Ui.Text(right, "Press H for the controls list", "small", "muted").style.marginTop = 4;
-
-            // EVA panel
-            eva = Ui.Panel(hud, "eva");
-            Ui.Text(eva, "EVA  -  SUIT A", "h3");
-            foreach (var (key, name) in new[] { ("sO2", "Suit O2"), ("sBatt", "Suit battery"), ("sCO2", "CO2 absorber") })
-            {
-                var r = Ui.Box(eva, "row"); Ui.Text(r, name, "small", "grow"); var v = Ui.Text(r, "", "small");
-                var b = Ui.Bar(eva); b.bar.style.marginBottom = 5;
-                bars[key] = (b.fill, v);
-            }
-            evaWalk = Ui.Text(eva, "", "small");
+            AddObjective(right, () => mo.P1Seismometer, () => $"Seismometer 24 h  <color=#8aa0aa>{mo.SeisGoodHours:0.0}/24 h{(mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance ? ", TOO CLOSE" : "")}{Planned(Activity.Seismometer)}</color>");
+            AddObjective(right, () => mo.P2Radiation, () => $"Radiation reading  <color=#8aa0aa>{mo.RadReadings}/1{Planned(Activity.Radiation)}</color>");
+            AddObjective(right, () => mo.P3Survive, () => $"Survive 72 h  <color=#8aa0aa>{mo.Hour:0}/72 h</color>");
+            AddObjective(right, () => mo.S1Samples, () => $"Bonus: 2 rock samples  <color=#8aa0aa>{mo.SamplesDelivered}/2{Planned(Activity.Samples)}</color>", true);
+            Ui.Box(right, "card-divider");
+            hintText = Ui.Text(right, "", "small", "cyan");
+            Ui.Text(right, "H = controls", "tiny", "muted").style.marginTop = 4;
 
             // Prompt + alerts + banner
             var bottom = Ui.Box(hud, "hud-bottom");
@@ -360,7 +356,6 @@ namespace Mohakash
             BuildSystemsPanel();
             BuildInventoryPanel();
             BuildTasksPanel();
-            BuildInsidePanel();
             BuildPauseMenu();
         }
 
@@ -368,7 +363,14 @@ namespace Mohakash
         string Planned(Activity a)
         {
             var at = Enumerable.Range(0, MissionPlan.Blocks).Where(b => m.Plan.At[b] == a).Select(MissionPlan.Hours).ToList();
-            return at.Count == 0 ? "  - not in your plan" : "  - planned " + string.Join(", ", at);
+            return at.Count == 0 ? "  - not planned" : "  - " + string.Join(", ", at);
+        }
+
+        void VitalRow(VisualElement parent, string key, string name)
+        {
+            var r = Ui.Box(parent, "row", "vital");
+            Ui.Text(r, name, "small", "grow"); var v = Ui.Text(r, "", "small");
+            bars[key] = (Ui.Bar(parent, "bar-thin").fill, v);
         }
 
         void AddObjective(VisualElement parent, Func<bool> done, Func<string> text, bool optional = false)
@@ -376,6 +378,7 @@ namespace Mohakash
             var r = Ui.Box(parent, "row", "objective");
             var d = Ui.Dot(r, Severity.Info);
             var l = Ui.Text(r, "", "small", optional ? "muted" : "");
+            l.enableRichText = true; l.style.flexShrink = 1;
             objectives.Add((l, d, done, text));
         }
 
@@ -411,6 +414,7 @@ namespace Mohakash
             SetStat("fatigue", mo.Fatigue / 100f, $"{mo.Fatigue:0}%", mo.Fatigue > 70 ? Severity.Critical : mo.Fatigue > 40 ? Severity.Warning : Severity.Good);
             SetStat("dose", mo.Dose / MissionModel.DoseAllowance, $"{mo.Dose:0.0} / 20", mo.Dose > 20 ? Severity.Critical : mo.Dose > 15 ? Severity.Warning : Severity.Good);
             SetStat("suit", mo.SuitIntegrity / 100f, $"{mo.SuitIntegrity:0}%", Ui.Level(mo.SuitIntegrity, 60, 30));
+            SetStat("evaTime", mo.EvaLeft / MissionModel.SuitCO2Max, $"{mo.EvaLeft:0.0} h", Ui.Level(mo.EvaLeft, 1.5f, 0.6f));
             SetStat("sO2", mo.SuitO2 / MissionModel.SuitO2Max, $"{mo.SuitO2:0.0} h", Ui.Level(mo.SuitO2, 1f, 0.5f));
             SetStat("sBatt", mo.SuitBatt / MissionModel.SuitBattMax, $"{mo.SuitBatt:0.0} h", Ui.Level(mo.SuitBatt, 1f, 0.5f));
             SetStat("sCO2", mo.SuitCO2 / MissionModel.SuitCO2Max, $"{mo.SuitCO2:0.0} h", Ui.Level(mo.SuitCO2, 1f, 0.5f));
@@ -440,7 +444,6 @@ namespace Mohakash
             UpdateSystems();
             UpdateInventory();
             UpdateTasks();
-            UpdateInside();
 
             bool crit = mo.O2ZeroHours > 0 || (!mo.Inside && mo.EvaLeft < 0.5f) || (mo.SpeActive && !mo.Inside);
             Ui.Show(banner, crit && !mo.Ended);
@@ -778,9 +781,7 @@ namespace Mohakash
 
         void BuildTasksPanel()
         {
-            tasksPanel = Ui.Panel(root); tasksPanel.pickingMode = PickingMode.Ignore;
-            tasksPanel.style.position = Position.Absolute;
-            tasksPanel.style.left = 12; tasksPanel.style.top = 320; tasksPanel.style.width = 370;
+            tasksPanel = Ui.Panel(leftCol, "hud-card"); tasksPanel.pickingMode = PickingMode.Ignore;
             tasksLbl = Ui.Text(tasksPanel, "", "small");
             tasksLbl.enableRichText = true; tasksLbl.style.whiteSpace = WhiteSpace.Normal;
         }
@@ -796,10 +797,10 @@ namespace Mohakash
             // "My plan": the current block and the next two, then the steps for what the player chose to do now
             var sb = new System.Text.StringBuilder();
             int now = MissionPlan.BlockAt(mo.Hour);
-            sb.Append($"<b>MY PLAN</b>   <color=#8aa0aa>hour {mo.Hour:0} of {MissionModel.DurationH:0}</color>\n");
+            sb.Append($"<color=#8aa0aa>MY PLAN   hour {mo.Hour:0} / {MissionModel.DurationH:0}</color>\n");
             int missed = Enumerable.Range(0, now).Where(b => !plan.Done(b, mo) && plan.At[b] != Activity.Sleep).DefaultIfEmpty(-1).First();
             if (missed >= 0) sb.Append($"<color=#ff7a7a>Still to do: {MissionPlan.Hours(missed)} {MissionPlan.Name(plan.At[missed])}</color>\n");
-            for (int b = now; b < Mathf.Min(now + 3, MissionPlan.Blocks); b++)
+            for (int b = now; b < Mathf.Min(now + 2, MissionPlan.Blocks); b++)
             {
                 bool done = plan.Done(b, mo);
                 string line = $"{(done ? "[x]" : b == now ? ">" : "[ ]")} {MissionPlan.Hours(b)}  {MissionPlan.Name(plan.At[b])}";
@@ -822,49 +823,20 @@ namespace Mohakash
                 foreach (var k in new[] { t.Get("E"), t.Get("F") })
                     if (k.State == TaskState.Active && k != cur) { sb.Append("<color=#ff7a7a><b>ALERT - not in your plan:</b></color>\n"); AppendTask(sb, k); }
             }
-            tasksLbl.text = sb.ToString();
+            tasksLbl.text = sb.ToString().TrimEnd();
         }
 
         static void AppendTask(System.Text.StringBuilder sb, MissionTask k)
         {
             sb.Append($"<b>Task {k.Id}: {k.Title}</b>  ({k.Steps.Count(s => s.Done)}/{k.Steps.Count})\n");
             if (k.State == TaskState.Locked) { sb.Append("<color=#8aa0aa>Not open yet: finish the earlier tasks first.</color>\n"); return; }
-            sb.Append($"<color=#8aa0aa>{k.Location}</color>\n");
             int n = 0;
             foreach (var s in k.Steps)
-                if (!s.Done && n++ < 3) sb.Append("[ ] ").Append(s.Text).Append('\n');
-            if (n > 3) sb.Append($"<color=#8aa0aa>+ {n - 3} more</color>\n");
+                if (!s.Done && n++ < 2) sb.Append("- ").Append(s.Text).Append('\n');
+            if (n > 2) sb.Append($"<color=#8aa0aa>+ {n - 2} more</color>\n");
         }
 
         // ================================================================== Habitat panel
-
-        void BuildInsidePanel()
-        {
-            inside = Ui.Box(root, "screen");
-            var p = Ui.Panel(inside); p.style.position = Position.Absolute; p.style.left = 12; p.style.bottom = 200; p.style.width = 560;
-            Ui.Text(p, "INSIDE THE HABITAT", "h2");
-            insideStatus = Ui.Text(p, "", "text");
-            var row = Ui.Box(p, "row", "wrap");
-            Ui.Show(row, false);   // the room is now walkable: use the stations (E) instead of these buttons
-            Ui.Button(row, "Exit to surface (E)", m.ExitHabitat, "btn-primary");
-            restBtn = Ui.Button(row, "Rest", m.ToggleRest);
-            repairBtn = Ui.Button(row, "Repair suit (spare)", m.RepairSuit);
-            Ui.Button(row, "Systems (Tab)", m.ToggleSystems);
-            Ui.Text(p, "WASD walk, mouse look. Stand at a glowing marker and press E: airlock door, suit dock, bunk, lab, console, comms, health scan, window. Tab = systems. Keys 1 / 2 / 3 speed time.", "small", "muted");
-            Ui.Show(inside, false);
-        }
-
-        void UpdateInside()
-        {
-            var mo = m.Model;
-            bool show = mo.Inside && !m.SystemsOpen && !mo.Ended;
-            Ui.Show(inside, show);
-            if (!show) return;
-            insideStatus.text = $"Suit refill: {mo.EvaLeft:0.0} / 4.0 h EVA time   |   Suit integrity {mo.SuitIntegrity:0}%   |   Spares {mo.Spares}\n" +
-                                $"Samples delivered {mo.SamplesDelivered} (analysed {m.SamplesAnalyzed})   |   CO2 cartridges {mo.CartridgeKg:0.0} kg capacity left   |   O2 vented {mo.O2Vented:0.00} kg";
-            restBtn.text = mo.Resting ? "Wake up" : "Rest (4x)";
-            repairBtn.SetEnabled(mo.Spares > 0 && mo.SuitIntegrity < 100);
-        }
 
         // ================================================================== Pause
 
@@ -887,7 +859,7 @@ namespace Mohakash
 
         public void ShowReport(MissionReport r, MissionModel mo)
         {
-            Ui.Show(hud, false); Ui.Show(systems, false); Ui.Show(inside, false);
+            Ui.Show(hud, false); Ui.Show(systems, false);
             var scr = Ui.Box(root, "screen", "center", "dim"); scr.pickingMode = PickingMode.Position;
             var p = Ui.Panel(scr); p.style.width = 1600; p.style.height = 960;
             var head = Ui.Box(p, "row", "noshrink");

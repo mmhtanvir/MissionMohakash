@@ -26,6 +26,7 @@ namespace Mohakash
             var root = doc.rootVisualElement;
             var sheet = Resources.Load<StyleSheet>("UI/Mohakash");
             if (sheet) root.styleSheets.Add(sheet);
+            if (sheet && root.panel != null) root.panel.visualTree.styleSheets.Add(sheet);   // dropdown menus open outside root
             root.AddToClassList("root");
             root.pickingMode = PickingMode.Ignore;
             return root;
