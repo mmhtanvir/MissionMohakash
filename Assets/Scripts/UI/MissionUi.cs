@@ -47,6 +47,10 @@ namespace Mohakash
         readonly List<(Label lbl, PowerLoad load)> loadStates = new List<(Label, PowerLoad)>();
         readonly List<(VisualElement dot, PowerLoad load)> loadDots = new List<(VisualElement, PowerLoad)>();
         Label sysSummary, sysShadow, insideStatus; Button ogsBtn, restBtn, repairBtn;
+        VisualElement inventory; Label invSeis, invSamples, invStored, invTorchState; Button invTorchBtn;
+        readonly List<(VisualElement box, Label name, Label count)> invSlots = new List<(VisualElement, Label, Label)>();
+        VisualElement invWeightRow, invWeightFill; Label invWeight;
+        LunarDayWidget lunarWidget;
 
         public void Init(Mission1 mission)
         {
@@ -72,7 +76,7 @@ namespace Mohakash
             Ui.Text(p, "MISSION PLAN", "section");
             foreach (var step in new[] { "1. Pack your rocket.", "2. Pick up the seismometer crate by the airlock.",
                                          "3. Carry it past the orange ring (80 m) and press E to set it up.", "4. Log a radiation reading at the post next to the habitat.",
-                                         "5. Bonus: collect 2 rock samples.", "6. Go inside, speed up time and keep power and air going until hour 72." })
+                                         "5. Bonus: collect 2 rock samples.", "6. Plan your 72 hours (sleep too!) after packing.", "7. Go inside, speed up time and keep power and air going until hour 72." })
                 Ui.Text(p, step, "text-small");
             Ui.Box(p, "divider");
             Ui.Text(p, "KEY IDEAS", "section");
@@ -212,6 +216,62 @@ namespace Mohakash
             Refresh();
         }
 
+        // ================================================================== 72 h planner
+
+        /// <summary>Pre-launch schedule: a table of 6 h blocks, each with one chosen activity (sleep included). Warnings advise, never block.</summary>
+        public void ShowPlanner(Loadout kit, Action<MissionPlan> onLaunch, Action onBack)
+        {
+            var plan = MissionPlan.Suggested(kit);
+            var acts = MissionPlan.Available(kit);
+            var names = acts.Select(MissionPlan.Name).ToList();
+            var scr = Ui.Box(root, "screen", "center", "dim");
+            scr.pickingMode = PickingMode.Position;
+            var p = Ui.Panel(scr); p.style.width = 1080;
+            Ui.Text(p, "PLAN YOUR 72 HOURS", "h1");
+            Ui.Text(p, "Choose what you will do in each 6-hour block. Don't forget to sleep! Your plan becomes the checklist on screen during the mission.", "text-small");
+
+            var head = Ui.Box(p, "row"); head.style.marginTop = 8;
+            Ui.Text(head, "HOURS", "section").style.width = 100;
+            Ui.Text(head, "WHAT I WILL DO", "section").style.width = 520;
+            Ui.Text(head, "WHAT HAPPENS ON THE MOON", "section", "grow");
+            var table = Ui.Add(p, new ScrollView()); table.style.maxHeight = 520;
+            var drops = new DropdownField[MissionPlan.Blocks];
+            Label summary = null, warn = null;
+            for (int i = 0; i < MissionPlan.Blocks; i++)
+            {
+                int b = i;
+                var r = Ui.Box(table, "row"); r.style.marginBottom = 2;
+                Ui.Text(r, MissionPlan.Hours(b), "text-small").style.width = 100;
+                var d = Ui.Add(r, new DropdownField(names, acts.IndexOf(plan.At[b])));
+                d.style.width = 520; d.style.fontSize = 17;
+                d.RegisterValueChangedCallback(_ => { plan.At[b] = acts[d.index]; Refresh(); });
+                drops[b] = d;
+                Ui.Text(r, MissionPlan.Events(b), "small", "cyan", "grow");
+            }
+            summary = Ui.Text(p, "", "text-small"); summary.style.marginTop = 8;
+            warn = Ui.Text(p, "", "small"); warn.enableRichText = true;
+            var row = Ui.Box(p, "row"); row.style.justifyContent = Justify.FlexEnd; row.style.marginTop = 10;
+            Ui.Button(row, "Use suggested plan", () =>
+            {
+                var s = MissionPlan.Suggested(kit);
+                for (int b = 0; b < MissionPlan.Blocks; b++) { plan.At[b] = s.At[b]; drops[b].SetValueWithoutNotify(MissionPlan.Name(s.At[b])); }
+                Refresh();
+            });
+            Ui.Button(row, "Back to loadout", () => { scr.RemoveFromHierarchy(); onBack(); });
+            Ui.Button(row, "START MISSION", () => { scr.RemoveFromHierarchy(); StartCoroutine(FadeThen(() => onLaunch(plan))); }, "btn-primary");
+
+            void Refresh()
+            {
+                int sleep = plan.At.Count(a => a == Activity.Sleep), eva = plan.At.Count(MissionPlan.Eva);
+                summary.text = $"Sleep {sleep * MissionPlan.BlockH} h   -   Spacewalks {eva}   -   Work {(MissionPlan.Blocks - sleep - eva) * MissionPlan.BlockH} h";
+                var w = plan.Warnings(kit);
+                warn.text = w.Count == 0 ? "<color=#6fdc8c>Plan looks good.</color>"
+                                         : string.Join("\n", w.Select(x => "<color=#ffb46e>! </color>" + x));
+            }
+            Refresh();
+            TestAdvance = _ => { scr.RemoveFromHierarchy(); StartCoroutine(FadeThen(() => onLaunch(plan))); };
+        }
+
         System.Collections.IEnumerator FadeThen(Action a)
         {
             fade.style.opacity = 1f;
@@ -250,7 +310,7 @@ namespace Mohakash
             // Left: astronaut
             var left = Ui.Panel(hud, "hud-left");
             Ui.Text(left, "ASTRONAUT", "h3");
-            foreach (var (key, name) in new[] { ("health", "Health"), ("fatigue", "Fatigue"), ("dose", "Dose (game-mSv)"), ("suit", "Suit integrity") })
+            foreach (var (key, name) in new[] { ("health", "Health"), ("hunger", "Hunger (fed)"), ("hydration", "Hydration"), ("fatigue", "Fatigue"), ("dose", "Dose (game-mSv)"), ("suit", "Suit integrity") })
             {
                 var r = Ui.Box(left, "row"); Ui.Text(r, name, "small", "grow"); var v = Ui.Text(r, "", "small");
                 var b = Ui.Bar(left); b.bar.style.marginBottom = 6;
@@ -259,14 +319,23 @@ namespace Mohakash
 
             // Right: link + objectives
             var right = Ui.Panel(hud, "hud-right");
+
+            // Lunar day clock widget + label row
+            var clockRow = Ui.Box(right, "row"); clockRow.style.marginBottom = 8; clockRow.style.alignItems = Align.Center;
+            lunarWidget = new LunarDayWidget();
+            clockRow.Add(lunarWidget);
+            var clockInfo = Ui.Box(clockRow, "col"); clockInfo.style.marginLeft = 10;
+            Ui.Text(clockInfo, "LUNAR DAY", "small", "muted");
+            stats["lunarPhase"] = Ui.Text(clockInfo, "", "small");
+            stats["lunarNight"] = Ui.Text(clockInfo, "", "small", "cyan");
+
             var link = Ui.Box(right, "row"); var linkDot = Ui.Dot(link, Severity.Good);
-            stats["link"] = Ui.Text(link, "", "small");
-            Ui.Text(right, "OBJECTIVES", "h3");
+            stats["link"] = Ui.Text(link, "", "small");            Ui.Text(right, "OBJECTIVES", "h3");
             var mo = m.Model;
-            AddObjective(right, () => mo.P1Seismometer, () => $"Seismometer >= 80 m, powered 24 h  ({mo.SeisGoodHours:0.0}/24 h{(mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance ? ", TOO CLOSE" : "")})");
-            AddObjective(right, () => mo.P2Radiation, () => $"Log 1 radiation reading  ({mo.RadReadings}/1)");
+            AddObjective(right, () => mo.P1Seismometer, () => $"Seismometer >= 80 m, powered 24 h  ({mo.SeisGoodHours:0.0}/24 h{(mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance ? ", TOO CLOSE" : "")}){Planned(Activity.Seismometer)}");
+            AddObjective(right, () => mo.P2Radiation, () => $"Log 1 radiation reading  ({mo.RadReadings}/1){Planned(Activity.Radiation)}");
             AddObjective(right, () => mo.P3Survive, () => $"Survive 72 h  ({mo.Hour:0}/72 h)");
-            AddObjective(right, () => mo.S1Samples, () => $"Optional: 2 regolith samples ({mo.SamplesDelivered} delivered, {mo.SamplesCarried} carried)", true);
+            AddObjective(right, () => mo.S1Samples, () => $"Optional: 2 regolith samples ({mo.SamplesDelivered} delivered, {mo.SamplesCarried} carried){Planned(Activity.Samples)}", true);
             hintText = Ui.Text(right, "", "small", "cyan"); hintText.style.marginTop = 6;
             Ui.Text(right, "Press H for the controls list", "small", "muted").style.marginTop = 4;
 
@@ -289,8 +358,17 @@ namespace Mohakash
             banner = Ui.Box(hud, "banner"); bannerText = Ui.Text(banner, "", "banner-box"); Ui.Show(banner, false);
 
             BuildSystemsPanel();
+            BuildInventoryPanel();
+            BuildTasksPanel();
             BuildInsidePanel();
             BuildPauseMenu();
+        }
+
+        /// <summary>Objective suffix naming the block(s) the player planned for it.</summary>
+        string Planned(Activity a)
+        {
+            var at = Enumerable.Range(0, MissionPlan.Blocks).Where(b => m.Plan.At[b] == a).Select(MissionPlan.Hours).ToList();
+            return at.Count == 0 ? "  - not in your plan" : "  - planned " + string.Join(", ", at);
         }
 
         void AddObjective(VisualElement parent, Func<bool> done, Func<string> text, bool optional = false)
@@ -314,11 +392,22 @@ namespace Mohakash
             stats["water"].text = $"{mo.Water:0.0} L"; Colour(stats["water"], Ui.Level(mo.Water, 3f, 1f));
             stats["food"].text = $"{mo.Food / 2500f:0.0} days";
             stats["co2"].text = $"{mo.CO2:0.00} kg"; Colour(stats["co2"], mo.CO2 > 0.6f ? Severity.Critical : mo.CO2 > 0.4f ? Severity.Warning : Severity.Good);
-            stats["sun"].text = mo.InShadow ? "SHADOW" : $"{mo.Sun:0%}";
+            stats["sun"].text = LunarClock.IsNight(mo.Hour) ? "NIGHT" : mo.InShadow ? "SHADOW" : $"{mo.Sun:0%}";
             clockText.text = $"h {mo.Hour:00.0} / 72";
+
+            // lunar day widget
+            lunarWidget?.Tick(mo.Hour);
+            float lunarPhase = LunarClock.Phase(mo.Hour);
+            bool night = LunarClock.IsNight(mo.Hour);
+            if (stats.TryGetValue("lunarPhase", out var lp))
+                lp.text = night ? "Night" : lunarPhase < 0.25f ? "Dawn" : lunarPhase < 0.45f ? "Morning" : lunarPhase < 0.55f ? "Noon" : "Afternoon";
+            if (stats.TryGetValue("lunarNight", out var ln))
+                ln.text = lunarWidget != null ? (night ? "▲ sunrise" : "▼ nightfall") : "";
             foreach (var b in speedButtons) b.EnableInClassList("speed-on", (int)b.userData == m.Speed);
 
             SetStat("health", mo.Health / 100f, $"{mo.Health:0}%", Ui.Level(mo.Health, 60, 30));
+            SetStat("hunger", mo.Hunger / 100f, $"{mo.Hunger:0}%", Ui.Level(mo.Hunger, 40, 15));
+            SetStat("hydration", mo.Hydration / 100f, $"{mo.Hydration:0}%", Ui.Level(mo.Hydration, 40, 15));
             SetStat("fatigue", mo.Fatigue / 100f, $"{mo.Fatigue:0}%", mo.Fatigue > 70 ? Severity.Critical : mo.Fatigue > 40 ? Severity.Warning : Severity.Good);
             SetStat("dose", mo.Dose / MissionModel.DoseAllowance, $"{mo.Dose:0.0} / 20", mo.Dose > 20 ? Severity.Critical : mo.Dose > 15 ? Severity.Warning : Severity.Good);
             SetStat("suit", mo.SuitIntegrity / 100f, $"{mo.SuitIntegrity:0}%", Ui.Level(mo.SuitIntegrity, 60, 30));
@@ -349,6 +438,8 @@ namespace Mohakash
             UpdatePrompt(mo);
             UpdateMarkers();
             UpdateSystems();
+            UpdateInventory();
+            UpdateTasks();
             UpdateInside();
 
             bool crit = mo.O2ZeroHours > 0 || (!mo.Inside && mo.EvaLeft < 0.5f) || (mo.SpeActive && !mo.Inside);
@@ -363,6 +454,31 @@ namespace Mohakash
 
         string NextHint(MissionModel mo)
         {
+            var tk = mo.Tasks;
+            bool guided = tk != null && tk.Enabled && !tk.AutoPass;
+            if (guided)
+            {
+                // the procedures (Tasks A-G) decide what comes next; the hint just points at the right place
+                if (mo.SpeActive)
+                    return !mo.Inside ? "Solar particle event: get back inside the habitat now!"
+                         : mo.Sheltering ? "Stay in the shielded corner until the event is over, then press E there once more to be cleared."
+                         : "Solar particle event: go to the radiation shelter (red marker, east bench) and press E.";
+                if (mo.Inside && mo.EvaLeft < 0.6f && tk.Get("C").State != TaskState.Passed)
+                    return "Suit is refilling. Speed up time (2/3) or sleep at the bunk first.";
+                if (tk.Get("A").State != TaskState.Passed)
+                    return mo.Inside ? "Task A: open the power & life support console (E at the console, or Tab) and read the checklist."
+                                     : "Task A first: go inside the habitat and open the power & life support console.";
+                if (mo.Inside && tk.Get("C").State == TaskState.Active && !tk.CanExit(out var why))
+                    return "Before the EVA: " + why;
+                if (mo.Inside && tk.Get("C").State == TaskState.Active)
+                    return m.Player != null && !m.Player.SuitedIndoors ? "EVA ready: put the suit on at the alcove (E), then use the airlock door."
+                                                                       : "EVA ready: use the airlock door.";
+                if (mo.SeisDeployed)
+                {
+                    var step = tk.Prompt(Spot.Seis, m.Player != null ? m.Player.transform.eulerAngles.y : 0f);
+                    if (step != null) return "Walk to the deployed seismometer and press E: " + step;
+                }
+            }
             if (mo.Inside && mo.EvaLeft < 0.6f) return "Suit is refilling. Speed up time (2/3) or sleep at the bunk, then use the airlock door.";
             if (mo.Inside && mo.SamplesDelivered > m.SamplesAnalyzed) return "Analyse your samples at the lab bench (cyan marker).";
             if (m.Kit.Has("SEIS") && !mo.SeisDeployed && !mo.SeisCarried) return "Pick up the seismometer crate next to the airlock (orange marker).";
@@ -371,6 +487,19 @@ namespace Mohakash
             if (mo.RadReadings == 0 && m.Kit.Has("RAD")) return "Log a radiation reading at the RAD post beside the habitat.";
             if (mo.SamplesDelivered + mo.SamplesCarried < 2 && m.Kit.Has("SAMP")) return "Optional: collect 2 regolith samples (cyan beacons), then bring them inside.";
             if (mo.SamplesCarried > 0) return "Bring the samples into the habitat to deliver them.";
+            if (guided)
+            {
+                // any procedure still waiting on the player
+                foreach (var t in tk.All)
+                {
+                    if (t.State != TaskState.Active) continue;
+                    var s = t.Steps.Find(z => !z.Done);
+                    if (s != null && s.At != Spot.Auto) return $"Task {t.Id}: {s.Text}.";
+                }
+            }
+            if (mo.Hydration < 30f) return mo.Inside ? "You are thirsty: drink at the water dispenser by the galley (E)." : "You are thirsty: head back inside to drink.";
+            if (mo.Hunger < 30f) return mo.Inside ? "You are hungry: eat at the galley (E)." : "You are hungry: head back inside to eat.";
+            if (mo.Fatigue > 70f && mo.Inside) return "You are tired: sleep at the bunk (E) or eat at the galley.";
             if (!mo.Inside) return "Head back to the airlock. Inside you can speed up time and manage power (Tab).";
             if (mo.Hour < MissionModel.ShadowStart) return "Before hour 40: charge the battery. Open Systems (Tab) to switch loads off for the shadow window.";
             return "Keep the base alive until hour 72. Watch the battery and cabin O2.";
@@ -461,6 +590,7 @@ namespace Mohakash
             var p = Ui.Panel(systems); p.style.width = 1060;
             var head = Ui.Box(p, "row");
             Ui.Text(head, "OUTPOST SYSTEMS  -  POWER BUS", "h1"); Ui.Box(head, "grow");
+            gatewayBtn = Ui.Button(head, "Call Gateway (resupply)", () => { Ui.Show(gateway, !Ui.Visible(gateway)); gateway.BringToFront(); });
             Ui.Button(head, "Close (Tab)", m.ToggleSystems);
             sysSummary = Ui.Text(p, "", "text");
             sysShadow = Ui.Text(p, "", "text", "accent");
@@ -493,13 +623,68 @@ namespace Mohakash
             }
             Ui.Text(p, "OGS modes: OFF / AUTO (runs when battery > 60% and there is sun) / ON. Electrolysis: 1.0 PW + 0.11 L water per hour -> 0.10 kg O2/h.", "small", "muted").style.marginTop = 8;
             Ui.Show(systems, false);
+            BuildGatewayPanel();
+        }
+
+        // ================================================================== Gateway resupply (from the systems panel)
+
+        VisualElement gateway; Button gatewayBtn, gatewaySend; Label gatewayInfo, gatewayMsg;
+        readonly List<(Toggle t, Label stock, SupplyItem item)> gatewayRows = new List<(Toggle, Label, SupplyItem)>();
+
+        void BuildGatewayPanel()
+        {
+            gateway = Ui.Box(root, "screen", "center");
+            var p = Ui.Panel(gateway); p.style.width = 820;
+            var head = Ui.Box(p, "row");
+            Ui.Text(head, "CALL LUNAR GATEWAY", "h1"); Ui.Box(head, "grow");
+            Ui.Button(head, "Close", () => Ui.Show(gateway, false));
+            Ui.Text(p, $"Forgot something, or running low? The Gateway station in lunar orbit can send a cargo drone. It lands {Resupply.DelayH:0} h after your call " +
+                       $"and carries up to {Resupply.DroneKg:0} kg. You only get {Resupply.MaxCalls} calls, and each one lowers your self-reliance score.", "text-small");
+            foreach (var it in Resupply.Items)
+            {
+                var r = Ui.Box(p, "row");
+                var t = Ui.Add(r, new Toggle { label = $"{it.Name}  ({it.Kg:0} kg)" }, "extra", "grow");
+                t.RegisterValueChangedCallback(_ => RefreshGateway());
+                var st = Ui.Text(r, "", "small"); st.style.width = 200;
+                gatewayRows.Add((t, st, it));
+            }
+            gatewayInfo = Ui.Text(p, "", "text-small"); gatewayInfo.style.marginTop = 8;
+            gatewayMsg = Ui.Text(p, "", "small", "accent");
+            var row = Ui.Box(p, "row"); row.style.justifyContent = Justify.FlexEnd; row.style.marginTop = 8;
+            gatewaySend = Ui.Button(row, "Send request", () =>
+            {
+                var cart = gatewayRows.Where(g => g.t.value).Select(g => g.item).ToList();
+                var why = m.Model.Gateway.Request(m.Model, cart);
+                gatewayMsg.text = why ?? $"Drone on its way: arrives at hour {m.Model.Hour + Resupply.DelayH:0}.";
+                if (why == null) foreach (var g in gatewayRows) g.t.SetValueWithoutNotify(false);
+                RefreshGateway();
+            }, "btn-primary");
+            Ui.Show(gateway, false);
+        }
+
+        void RefreshGateway()
+        {
+            var mo = m.Model; var gw = mo.Gateway;
+            float kg = gatewayRows.Where(g => g.t.value).Sum(g => g.item.Kg);
+            foreach (var (t, stock, item) in gatewayRows)
+            {
+                var blocked = item.Blocked?.Invoke(mo);
+                stock.text = blocked != null ? blocked : (item.Low(mo) ? "LOW: " : "") + item.Stock(mo);
+                Colour(stock, item.Low(mo) ? Severity.Warning : Severity.Info);
+                t.SetEnabled(blocked == null || t.value);
+            }
+            string pending = gw.Pending.Count == 0 ? "none" : string.Join("; ", gw.Pending.Select(p => $"hour {p.due:0}: {string.Join(", ", p.items.Select(i => i.Name))}"));
+            gatewayInfo.text = $"Drone load {kg:0} / {Resupply.DroneKg:0} kg     Calls left {Resupply.MaxCalls - gw.Calls} / {Resupply.MaxCalls}\nOn the way: {pending}";
+            gatewaySend.SetEnabled(kg > 0f && kg <= Resupply.DroneKg && gw.Calls < Resupply.MaxCalls);
         }
 
         void UpdateSystems()
         {
             bool open = m.SystemsOpen && !m.Model.Ended;
             Ui.Show(systems, open);
-            if (!open) return;
+            if (!open) { Ui.Show(gateway, false); return; }
+            if (Ui.Visible(gateway)) RefreshGateway();
+            gatewayBtn.text = m.Model.Gateway.Pending.Count > 0 ? "Gateway: drone on its way" : "Call Gateway (resupply)";
             var mo = m.Model;
             sysSummary.text = $"Solar {mo.SolarPeak:0.0} PW peak x sun {mo.Sun:0%} x (1 - dust {mo.Dust:0%}) = {mo.Supply:0.00} PW   |   Load {mo.Demand:0.00} PW   |   Battery {mo.Battery:0.0}/{mo.BatteryCap:0} PWh";
             float toShadow = MissionModel.ShadowStart - mo.Hour;
@@ -510,6 +695,145 @@ namespace Mohakash
             foreach (var (dot, l) in loadDots) Ui.SetDot(dot, l.Powered ? Severity.Good : (l.Why != null && l.Why.StartsWith("SHED")) ? Severity.Critical : Severity.Warning);
             foreach (var (b, l) in loadButtons) { b.text = l.Enabled ? "ON" : "OFF"; b.EnableInClassList("btn-on", l.Enabled); b.EnableInClassList("btn-off", !l.Enabled); }
             if (ogsBtn != null) { ogsBtn.text = mo.Ogs.ToString().ToUpper(); ogsBtn.EnableInClassList("btn-on", mo.Ogs != OgsMode.Off); ogsBtn.EnableInClassList("btn-off", mo.Ogs == OgsMode.Off); }
+        }
+
+        // ================================================================== Inventory panel (F)
+
+        void BuildInventoryPanel()
+        {
+            inventory = Ui.Box(root, "screen", "center");
+            var p = Ui.Panel(inventory); p.style.width = 760;
+            var head = Ui.Box(p, "row");
+            Ui.Text(head, "INVENTORY", "h1"); Ui.Box(head, "grow");
+            Ui.Button(head, "Close (F)", m.ToggleInventory);
+
+            Ui.Text(p, "CARRYING", "section");
+            invSeis = Ui.Text(p, "", "text");
+            invSamples = Ui.Text(p, "", "text");
+            var grid = Ui.Box(p, "row"); grid.style.flexWrap = Wrap.Wrap; grid.style.width = 5 * 132;
+            for (int i = 0; i < Inventory.BagSlots; i++)
+            {
+                var c = Ui.Box(grid, "col"); c.style.width = 124; c.style.height = 62; c.style.marginTop = c.style.marginBottom = c.style.marginLeft = c.style.marginRight = 4;
+                c.style.borderTopWidth = c.style.borderBottomWidth = c.style.borderLeftWidth = c.style.borderRightWidth = 1;
+                c.style.borderTopColor = c.style.borderBottomColor = c.style.borderLeftColor = c.style.borderRightColor = new Color(0.47f, 0.63f, 0.86f, 0.5f);
+                c.style.backgroundColor = new Color(0.12f, 0.2f, 0.35f, 0.6f); c.style.justifyContent = Justify.Center; c.style.alignItems = Align.Center;
+                invSlots.Add((c, Ui.Text(c, "", "small"), Ui.Text(c, "", "small", "cyan")));
+            }
+            invWeightRow = Ui.Box(p, "col"); invWeightRow.style.marginTop = 6;
+            invWeight = Ui.Text(invWeightRow, "", "small");
+            invWeightFill = Ui.Bar(invWeightRow, "bar-big").fill;
+            var tr = Ui.Box(p, "table-row");
+            Ui.Text(tr, "Suit torch (standard EVA gear)", "cell-name");
+            invTorchState = Ui.Text(tr, "", "cell");
+            invTorchBtn = Ui.Button(tr, "", () => m.Torch.Toggle(), "btn-small"); invTorchBtn.style.width = 130;
+
+            Ui.Text(p, "HABITAT STORES", "section");
+            invStored = Ui.Text(p, "", "text");
+
+            Ui.Text(p, "MISSION CARGO", "section");
+            var list = Ui.Add(p, new ScrollView()); list.style.maxHeight = 320;
+            foreach (var def in Catalog.Mission1)
+            {
+                int n = m.Kit.Count(def.Id); if (n == 0) continue;
+                var r = Ui.Box(list, "table-row");
+                Ui.Text(r, def.Name, "cell-name");
+                Ui.Text(r, "x" + n, "cell");
+                Ui.Text(r, def.Purpose, "small", "muted").style.flexShrink = 1;
+            }
+            Ui.Show(inventory, false);
+        }
+
+        void UpdateInventory()
+        {
+            bool open = m.InventoryOpen && !m.Model.Ended;
+            Ui.Show(inventory, open);
+            if (!open) return;
+            var mo = m.Model;
+            invSeis.text = !m.Kit.Has("SEIS") ? "No seismometer packed"
+                : mo.SeisCarried ? "Seismometer: carried in both hands"
+                : mo.SeisDeployed ? "Seismometer: deployed" : "Seismometer: not picked up yet";
+            var inv = mo.Inv;
+            invSamples.text = inv.HasBag ? $"EVA bag: {inv.Slots.Count} / {Inventory.BagSlots} slots used"
+                                         : $"Pockets: {inv.Slots.Count} / {Inventory.PocketSlots} slots used (take the EVA bag by the cargo bags for 20)";
+            for (int i = 0; i < invSlots.Count; i++)
+            {
+                var (box, name, count) = invSlots[i];
+                Ui.Show(box, i < inv.Capacity);
+                var slot = i < inv.Slots.Count ? inv.Slots[i] : null;
+                name.text = slot?.Item.Name ?? "";
+                count.text = slot == null ? "" : $"{slot.Count} / {Inventory.PerSlot}";
+            }
+            Ui.Show(invWeightRow, inv.HasBag);
+            invWeight.text = $"Weight {inv.Kg:0.#} / {Inventory.MaxKg:0} kg";
+            float wt = inv.Kg / Inventory.MaxKg;
+            Ui.SetBar(invWeightFill, wt, wt >= 1f ? Severity.Critical : wt > 0.8f ? Severity.Warning : Severity.Good);
+            invStored.text = $"Samples stored: {mo.SamplesDelivered} / {mo.SampleCapacity}     Spare parts kits: {mo.Spares}";
+            invTorchState.text = m.Torch.On ? "ON" : "OFF";
+            invTorchBtn.text = m.Torch.On ? "Turn off (T)" : "Turn on (T)";
+        }
+
+        // ================================================================== Tasks checklist panel (HUD overlay)
+
+        VisualElement tasksPanel; Label tasksLbl; float tasksNext;
+
+        void BuildTasksPanel()
+        {
+            tasksPanel = Ui.Panel(root); tasksPanel.pickingMode = PickingMode.Ignore;
+            tasksPanel.style.position = Position.Absolute;
+            tasksPanel.style.left = 12; tasksPanel.style.top = 320; tasksPanel.style.width = 370;
+            tasksLbl = Ui.Text(tasksPanel, "", "small");
+            tasksLbl.enableRichText = true; tasksLbl.style.whiteSpace = WhiteSpace.Normal;
+        }
+
+        void UpdateTasks()
+        {
+            var mo = m.Model; var t = mo.Tasks; var plan = m.Plan;
+            plan.Track(mo);
+            Ui.Show(tasksPanel, !mo.Ended);
+            if (Time.unscaledTime < tasksNext) return;
+            tasksNext = Time.unscaledTime + 0.25f;
+
+            // "My plan": the current block and the next two, then the steps for what the player chose to do now
+            var sb = new System.Text.StringBuilder();
+            int now = MissionPlan.BlockAt(mo.Hour);
+            sb.Append($"<b>MY PLAN</b>   <color=#8aa0aa>hour {mo.Hour:0} of {MissionModel.DurationH:0}</color>\n");
+            int missed = Enumerable.Range(0, now).Where(b => !plan.Done(b, mo) && plan.At[b] != Activity.Sleep).DefaultIfEmpty(-1).First();
+            if (missed >= 0) sb.Append($"<color=#ff7a7a>Still to do: {MissionPlan.Hours(missed)} {MissionPlan.Name(plan.At[missed])}</color>\n");
+            for (int b = now; b < Mathf.Min(now + 3, MissionPlan.Blocks); b++)
+            {
+                bool done = plan.Done(b, mo);
+                string line = $"{(done ? "[x]" : b == now ? ">" : "[ ]")} {MissionPlan.Hours(b)}  {MissionPlan.Name(plan.At[b])}";
+                sb.Append(done ? $"<color=#6fdc8c>{line}</color>" : b == now ? $"<color=#ffb46e><b>{line}</b></color>" : $"<color=#8aa0aa>{line}</color>");
+                sb.Append('\n');
+            }
+            sb.Append('\n');
+
+            var act = plan.At[now];
+            if (act == Activity.Sleep) sb.Append($"Go to the bunk and press E to sleep. Slept {plan.Slept(now):0.0} / {MissionPlan.SleepNeededH:0} h this block.\n");
+            else if (act == Activity.Chores) sb.Append("Eat at the galley, wash up, and check power and air in the systems panel (Tab).\n");
+            else if (act == Activity.Radiation && t.Get("C").State == TaskState.Passed) sb.Append("Log a reading at the RAD post beside the habitat.\n");
+            else if (act == Activity.Samples && t.Get("C").State == TaskState.Passed) sb.Append("Collect 2 rock samples (cyan beacons) and bring them inside.\n");
+            if (t.Enabled)
+            {
+                var ids = MissionPlan.TaskIds(act);
+                var cur = ids.Select(c => t.Get(c.ToString())).FirstOrDefault(k => k.State != TaskState.Passed);
+                if (cur != null) AppendTask(sb, cur);
+                // hazard procedures interrupt any plan
+                foreach (var k in new[] { t.Get("E"), t.Get("F") })
+                    if (k.State == TaskState.Active && k != cur) { sb.Append("<color=#ff7a7a><b>ALERT - not in your plan:</b></color>\n"); AppendTask(sb, k); }
+            }
+            tasksLbl.text = sb.ToString();
+        }
+
+        static void AppendTask(System.Text.StringBuilder sb, MissionTask k)
+        {
+            sb.Append($"<b>Task {k.Id}: {k.Title}</b>  ({k.Steps.Count(s => s.Done)}/{k.Steps.Count})\n");
+            if (k.State == TaskState.Locked) { sb.Append("<color=#8aa0aa>Not open yet: finish the earlier tasks first.</color>\n"); return; }
+            sb.Append($"<color=#8aa0aa>{k.Location}</color>\n");
+            int n = 0;
+            foreach (var s in k.Steps)
+                if (!s.Done && n++ < 3) sb.Append("[ ] ").Append(s.Text).Append('\n');
+            if (n > 3) sb.Append($"<color=#8aa0aa>+ {n - 3} more</color>\n");
         }
 
         // ================================================================== Habitat panel

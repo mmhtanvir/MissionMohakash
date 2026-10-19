@@ -19,6 +19,7 @@ namespace Mohakash
         Light recessLight; ParticleSystem puff;
         float k; bool puffedOpen, puffedClose;
         Vector3 hingeHome; float hingeSign;
+        Collider doorwayBlocker;   // static invisible wall over the opening; disabled when hatch is open
 
         public bool Moving => Mathf.Abs(k - (Open ? 1f : 0f)) > 0.0005f;
         public IEnumerator Wait() { while (Moving) yield return null; }
@@ -81,6 +82,17 @@ namespace Mohakash
             h.recessLight.transform.SetParent(root, false); h.recessLight.transform.localPosition = new Vector3(0, height * 0.35f, -0.6f);
             h.recessLight.type = LightType.Point; h.recessLight.range = 3f; h.recessLight.color = new Color(1f, 0.96f, 0.88f); h.recessLight.intensity = 0f; h.recessLight.shadows = LightShadows.None;
             h.puff = MakePuff(root, height);
+
+            // Invisible static blocker: covers the doorway opening so the player cannot jump/walk through when closed.
+            // Sits at the hatch face (z = 0 in root space), sized to the opening. Disabled while the hatch is open.
+            var blockerGo = new GameObject("Doorway blocker");
+            blockerGo.transform.SetParent(root, false);
+            blockerGo.transform.localPosition = Vector3.zero;
+            var bc = blockerGo.AddComponent<BoxCollider>();
+            bc.size   = new Vector3(width, height, 0.18f);
+            bc.center = Vector3.zero;
+            h.doorwayBlocker = bc;
+
             return h;
         }
 
@@ -146,6 +158,9 @@ namespace Mohakash
             bool moving = Moving;
             if (lamp) lamp.sharedMaterial = moving ? ((Time.time * 4f) % 1f < 0.5f ? amber : red) : (k > 0.99f ? green : red);
             if (recessLight) recessLight.intensity = 2.2f * Ease((k - UnlockEnd) / 0.3f);
+
+            // doorway blocker: solid when hatch is fully or mostly closed, gone once it has swung clear
+            if (doorwayBlocker != null) doorwayBlocker.enabled = k < PopEnd;
         }
     }
 }

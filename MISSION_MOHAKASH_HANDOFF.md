@@ -152,3 +152,70 @@ Continue Mission Mohakash from this handoff. First inspect the attached ZIP and 
 - **Rear-entry suit (M06i)**: `split_helmet.py` now also splits the life-support pack into `EVA_Pack` (rigid on Chest, origin on a vertical side hinge) and adds `EVA_HatchFrame` (dark opening + rim, hidden inside the closed pack). Suit off: helmet off -> neutral stance -> pack swings open 100 deg -> step backward out through the hatch -> the stored suit's pack closes and it slides into the alcove. Suit on: suit slides out, pack opens, step forward in, pack swings shut, then helmet on + suit check. Unity-space hinge sign: +100 deg about the pack's local Y (glTFast X mirror).
 - **Helmet clip hands fix (M06j)**: `suit_clips.py` now uses analytic 2-bone arm IK with a pole vector (elbow out/down/back) along a wrist path rest -> side raise -> helmet grip -> lift -> out -> front hold, plus inward wrist bend from the grip on. Max upper-arm change ~15 deg per 1/30 s (was a 70-80 deg flip at 0.5 s). SuitOn reuses the grip offset measured during SuitOff and crossfades 0.5 s into the hold pose (no arm snap / sampled-pose flash).
 - **Three-room habitat (M06k)**: `HabitatInterior.BuildRooms` partitions the interior: RESTING PLACE (NW, x < -1.6, z > 0.6: bunk + blanket, second bunk, crew lockers, reading light), SCIENCE LAB (NE, x > 1.6, z > 0.6: bench/microscope, portholes, window seat, glovebox, CTB stowage), and the MAIN HABITAT (rest: galley table, console moved to the centre of the north wall, comms, suit alcove, airlock, new galley unit, planter, and a screened HYGIENE corner SE with toilet, wash basin, mirror, wipes, health scanner). Doorways 1.0 x 2.3 m at z = 1.7 with framed openings and signs; station radii reduced so they can't be used through walls.
+
+## Session 2026-10-17 — Torch, LunarClock, Inventory, Comms, MissionTasks
+
+### Project maintenance
+- Removed `Library/`, `Logs/`, `UserSettings/`, `.DS_Store`, `__pycache__/` from the project folder.
+- Created `MissionMohakash.zip` (193 MB) in the parent directory for submission.
+
+### New files
+| File | Purpose |
+|---|---|
+| `Scripts/World/LunarClock.cs` | Static lunar day helper: `Phase(h)`, `ElevationDeg(h)`, `AzimuthDeg(h)`, `IsNight(h)`. `SynodicDayHours=708.7`, `Compression=1` (real), `StartPhase=0.46` (late afternoon start). Set `Compression=9.84` for a full day/night inside 72 h. |
+| `Scripts/World/Torch.cs` | Shoulder/helmet-mounted EVA spotlight. Attaches to `Socket_Helmet` via `Player.EvaRig`. 45 m spot, smooth fade, tracks camera direction. Body mesh hidden when `Model.Inside \|\| Player.Dead`. `Toggle()` returns false if blocked. |
+| `Scripts/UI/LunarDayWidget.cs` | Custom `VisualElement` drawn with `Painter2D`: golden day arc, orange dawn/dusk shoulders, dark navy night arc. White dot = now, cyan dot = mission start. Center shows countdown to next sunrise/sunset. |
+| `Scripts/Sim/MissionTasks.cs` | Pure-C# stage-1 procedure system. Tasks A–G with real sim verification. `Enabled` flag, `AutoPass` for tests. Public API: `Do(Spot,Ctx,one)`, `Prompt(Spot,yaw)`, `CanExit(out why)`, `OnExit()`, `Survey(Ctx)`, `Update()`, `Finish()`. |
+| `Scripts/Sim/CommsNetwork.cs` | Earth/relay/surface comms network. Illustrative link budgets, real terrain ray-march line-of-sight, store-and-forward data queue, scripted antenna fault (random tracker offset or loose connector), relay R-1 on a 12 h orbit, crater-proxy relay site search. Saves Mission 2 campaign variables to `PlayerPrefs` via `CommsSave`. |
+| `Scripts/UI/CommsWorkstation.cs` | Full-screen workstation overlay: orbital view, local terrain view (with red-X terrain blockage marks), available paths panel, action buttons (diagnostics, re-home tracker, reseat connector, establish link, test packet/voice/telemetry/science, find relay site, save results), live data queue and event log. |
+
+### Modified files
+| File | Changes |
+|---|---|
+| `Scripts/Core/GameInput.cs` | Added `Inventory` (F) and `Torch` (T) key properties. |
+| `Scripts/World/MoonWorld.cs` | Added `SetSunNatural(elevDeg, azimuthDeg, limit)`: uses LunarClock output, calls `SetSun` for colour/shadow/haze then overrides sun rotation and dims ambient for night. |
+| `Scripts/World/Astronaut.cs` | Added `public CrewRig EvaRig => evaRig` property for torch socket lookup. |
+| `Scripts/World/HingedHatch.cs` | Added invisible `doorwayBlocker` `BoxCollider` on the hatch root — prevents player jumping through the closed hatch. Enabled when `k < PopEnd` (0.28), disabled once the slab has cleared the frame. |
+| `Scripts/World/HabitatInterior.cs` | Added `public Interactable ShelterSpot` field. Added radiation shelter station at `(4.4, 0, 0.2)` (east bench corner). Updated comms station prompt to `"Open the comms workstation"`. |
+| `Scripts/Sim/MissionModel.cs` | Added `Tasks`, `Net`, `SeisInstalled`, `SeisQuality`, `Sheltering`, `CabinPressureKpa` fields. Constructor inits `Tasks = new MissionTasks(this)` and `Net = new CommsNetwork(this)`. Seismometer accumulation gated on `SeisInstalled`. SPE dose now uses `Sheltering` flag (0.03 vs 0.2 indoor rate). `PickUpSeismometer` calls `Tasks.ResetSeis()`. `DeploySeismometer` calls `Tasks.OnSeisDeployed()`. |
+| `Scripts/Sim/MissionTasks.cs` | Replaced old B6 single comms step with 9 new steps (inspect, LOS verify, paths review, establish, packet ACK, voice/tlm/sci checks, quality view, orbital map, save results) all driven by `x.Net.*` fields. |
+| `Scripts/Sim/MissionReport.cs` | Added `Procedures (Tasks A-G)` score line (5 pts, calls `Tasks.Finish()`). Total now normalised by `max` so score stays 0-100 regardless of which optional lines were added. |
+| `Scripts/UI/MissionUi.cs` | Added `LunarDayWidget` in `hud-right` (lunar day ring + phase label + countdown). HUD sun stat shows `"NIGHT"` when `LunarClock.IsNight`. Added inventory panel (F) with seismometer status, samples, stored, torch toggle. Added tasks checklist panel (left HUD overlay, shows up to 2 active tasks with pending steps). |
+| `Scripts/UI/ControlsUi.cs` | Added `T` (torch) and `F` (inventory) rows to the ON FOOT group. |
+| `Scripts/Mission1.cs` | **New fields/helpers**: `Comms` (`CommsWorkstation`), `overrideSurveyUntil`, `Ctx()` (public `StepCtx`), `Slope(p)`, `TryDeploySeismometer()` (site survey + 4 s risk-accept window), `ShelterUse()`. **Launch**: `Tasks.Enabled`, `Tasks.Say`, `Net.Init` (antenna at `(-3,-8)`, 3 sample sites A/B/C), `Comms` init. **Update**: tasks `PlayerPos`/`ShelterDist` feed, `Tasks.Update()`, `Net.Update()`, Esc closes workstation before pause. **HandleWorldInput**: `canAct` extended with `Comms.Open` guard; deploy E calls `TryDeploySeismometer`. **FinishDeploy**: `pick.Prompt` from `Tasks.Prompt(Spot.Seis)`; `pick.Use` runs `Tasks.Do(Seis, one:true)` before pickup. **ExitHabitat**: `Tasks.CanExit` gate, `Tasks.Do(Door)` before `StartCoroutine`. **ExitRoutine**: `Tasks.Do(Airlock, one:true)` after inner hatch + after depressurise; `Tasks.OnExit()`; `Tasks.Do(Airlock)` sweep at the end. **SuitDockUse**: `Tasks.Do(SuitDock)` hook. **CommsCall**: replaced with `Comms.OpenUi()`. **ToggleSystems**: `Tasks.Do(Systems)` when opening. **Sample sites**: `Model.Net.SurveyAt(name)` on each collection. **Torch/InventoryOpen**: fields + init in Launch, toggle keys, ToggleInventory. **SetSunNatural** replaces `SetSun`. |
+
+### How the new systems connect
+- **MissionTasks** is enabled by `Mission1.Launch` and ticked every frame via `tk.Update()`. Steps check real model/sim state; nothing touches scene objects. `AutoPass = true` (set in AutoTest) marks everything done instantly, bypassing all gates.
+- **CommsNetwork** is initialised with the real terrain height function and the three sample-site positions. It re-evaluates link budgets every 0.5 s, drives the data queue, and saves campaign variables for Mission 2 on every change.
+- **CommsWorkstation** is opened by pressing E at the comms terminal (which calls `CommsCall()` → `Comms.OpenUi()`). Esc closes it. Every action button appends a line to `n.Log` and calls `Tasks.Do(Spot.Comms)` to advance the checklist.
+
+### Next tasks (updated priority)
+1. Play Mission 1 with a human and the TESTING.md checklist; tune mouse sensitivity, torch position on helmet, task checklist UI placement.
+2. Verify compile in Unity 6 (no Unity here — check `using System.Linq` is present in MissionTasks.cs; check `HeightAt(Vector3)` signature match in Net.Init lambda).
+3. Real LOLA south-pole terrain + illumination curve; Data Sources screen.
+4. Install WebGL module; first web build.
+5. Mission 2 "Into the Shadow": crater darkness, RELAY/ICE-D/WEU hardware, ice prospecting. `CommsSave` already persists the relay site and system health for Mission 2 to read.
+6. Audio (suit breathing, alarms, footsteps).
+
+## Session 2026-10-17b - loose-ends pass (tasks, comms, habitat, hints)
+Audit of features vs. wiring. Fixed (all C#, no asset changes):
+- **EVA softlock without COM**: standard loadout has no Comms console, but Task C3 and Task G "final report" needed the comms workstation. `MissionTasks` now builds those steps as `Spot.Auto` when `Kit` has no COM, and Task B swaps the 8 link-test steps for one auto step.
+- **Task steps stalled after Auto steps**: `MissionTasks.Do` now runs up to 4 passes, calling `AutoRun` between them (Task A6 no longer needs the Systems panel opened a second time).
+- **`ManifestValid` was never set** (Task A5 always passed): `Mission1.Launch` sets it to `Kit.WithinLimits`.
+- **Suit-up did not advance Task C** (only the separate suit-locker did): `SuitRoutine(on)` now calls `Tasks.Do(Spot.SuitDock)`.
+- **Start message and HUD "Next:" hint contradicted the task order** (told you to grab the seismometer first): `MissionUi.NextHint` is task-aware (Task A, EVA gate reason, suit/airlock, SPE shelter, deployed-seismometer steps, any waiting procedure step).
+- **AutoTest never set `Tasks.AutoPass`** (handoff claimed it did): scripted runs were gated by Task A/C. Now set right after the loadout.
+- **Food and water had no player action**: new `World/HabitatAmenities.cs` builds a galley (east wall) and a wash basin (NW corner) with E-stations; `MissionModel.EatMeal` (6 h gap, eases fatigue, uses no extra food) and `MissionModel.WashUp` (1 L water, 12 h gap), `Mission1.Galley()` / `WashUp()`.
+- **Outdoor machines were not interactive**: E on the oxygen plant, battery bank, O2 / water tanks, storage pallet, garage and surface antenna now reads live status. The antenna walk-round sets `Net.Inspected` (Task B antenna-inspection step) and tells you which fault to fix in the workstation.
+- **TNK-W could never be packed from the simple loadout**: new extra "Water tank (40 L)" in `Catalog.Extras`.
+- Docs correction: the **M06k three-room habitat** (partition walls, second bunk, crew lockers, glovebox, screened hygiene corner) described above is NOT in the code of this ZIP: `HabitatInterior.cs` is still one 12 x 9 m room. Only the planter shelf and cargo bags exist. The new galley / wash corner fit that single room.
+- Files: Mission1.cs, Sim/MissionTasks.cs, Sim/MissionModel.cs, Sim/Loadout.cs, UI/MissionUi.cs, Dev/AutoTest.cs, NEW World/HabitatAmenities.cs.
+- Verified: tree-sitter C# parse of all changed files (0 errors). NOT verified in Unity (no Unity here): semantic compile, galley / wash placement against the existing props, marker clutter.
+
+## Session 2026-10-19 - 72 h planner, inventory slots, hunger/hydration, Gateway resupply
+- **72 h planner** (`Sim/MissionPlan.cs`, `MissionUi.ShowPlanner`): after the loadout, a table of 12 x 6 h blocks; each block gets one activity (Sleep, habitat setup, seismometer/radiation/sample spacewalks, shelter, power, chores, close-out) with the moon events beside it. Prefilled with a suggested plan; warnings (too little sleep, EVA in the storm/shadow, seismometer too late...) advise but never block. The HUD task panel is now "MY PLAN": current + next 2 blocks, the steps of the task behind the current activity, overdue items, and hazard tasks E/F as off-plan alerts. Sleep blocks count as done after 4 h at the bunk. Objectives show "planned hX-Y".
+- **Inventory** (`Sim/Inventory.cs`): 4 pocket slots; the EVA bag (new E-station at the cargo transfer bags, south wall) gives 20 slots + a weight bar. One item type per slot, 10 per slot, 20 kg total. Rock samples (1 kg) now live in it (`SamplesCarried` is derived). Only samples use it so far.
+- **Hunger / hydration** (`MissionModel.Hunger/Hydration`, HUD bars under Health): empty in ~24 h / ~16 h (x1.5 in the suit, x0.5 asleep), drain health at 0, block regen below 20%. Eat at the galley (+40), drink at the new water dispenser station (+35, inside the existing 3 L/day water burn). Tests and AutoTest eat/drink.
+- **Gateway resupply** (`Sim/Resupply.cs`, Tab > "Call Gateway"): 3 calls, 30 kg drone, delivered to the habitat stores 6 h later: water, food, O2, scrubber cartridge, spare kit, sample container, battery, solar panel. Low stock highlights + an info hint. New report line "Self-reliance" (5 pts). The drone has no 3D model; instruments (SEIS/RAD/COM) are not orderable because their world objects are built at launch.
+- `Library/` had ~12k iCloud duplicate "* 2.*" files (some dataless) that hung Unity's import; deleted and regenerated. Keeping the project in iCloud-synced ~/Documents will keep causing this.
+- Verified: Unity 6000.6.5f1 batch compile clean, EditMode 14/14 (new: inventory, Gateway).

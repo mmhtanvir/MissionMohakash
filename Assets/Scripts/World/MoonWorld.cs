@@ -560,6 +560,22 @@ namespace Mohakash
             }
         }
 
+        /// <summary>Sun from the lunar clock. 'limit' is Model.Sun, so your scripted shadow window still works.</summary>
+        public void SetSunNatural(float elevDeg, float azimuthDeg, float limit = 1f)
+        {
+            // scripted shadow window pushes the sun behind the ridge (smooth, no pop)
+            elevDeg = Mathf.Min(elevDeg, Mathf.Lerp(-4f, elevDeg, Mathf.InverseLerp(0f, 0.8f, limit)));
+
+            float daylight = Mathf.Clamp01(Mathf.InverseLerp(-2f, 12f, elevDeg));
+            SetSun(daylight);                                                  // intensity, colour, shadows, haze, ambient
+            Sun.transform.rotation = Quaternion.Euler(elevDeg, azimuthDeg + 180f, 0f);
+
+            float k = Mathf.Lerp(0.2f, 1f, daylight);                          // real dark at night (your earthshine is bright)
+            RenderSettings.ambientSkyColor *= k;
+            RenderSettings.ambientEquatorColor *= k;
+            RenderSettings.ambientGroundColor *= k;
+        }
+
         void LateUpdate()
         {
             var cam = Camera.main;

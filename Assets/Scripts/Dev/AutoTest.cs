@@ -74,7 +74,11 @@ namespace Mohakash
             yield return Wait(1f);
             if (full) yield return Shot("03_loadout");
             m.Ui.TestAdvance(kit);
+            yield return Wait(1.5f);   // loadout fade -> 72 h planner
+            if (full) yield return Shot("03b_planner");
+            m.Ui.TestAdvance(null);    // suggested plan
             while (m.Current != Mission1.Phase.Operations) yield return null;
+            m.Model.Tasks.AutoPass = true;   // scripted runs skip the guided procedures (Tasks A-G) so the objectives can be reached by teleport
             yield return Wait(2.5f);
 
             if (full)
@@ -141,6 +145,7 @@ namespace Mohakash
             while (m.Current == Mission1.Phase.Operations)
             {
                 if (m.Model.Inside && m.Speed != 4) m.SetSpeed(4);
+                if (m.Model.Inside) { m.Model.EatMeal(out _); m.Model.Drink(out _); }   // scripted crew eats and drinks
                 if (full && !shadowShot && m.Model.Hour > 41f) { shadowShot = true; m.TestSpeed = 0f; yield return Wait(1f); yield return Shot("14_shadow_window"); m.TestSpeed = 40f; }
                 yield return null;
             }

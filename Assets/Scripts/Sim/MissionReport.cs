@@ -31,7 +31,13 @@ namespace Mohakash
             Add("Sustainability (O2 made locally)", 5f * Mathf.Min(1f, Mathf.Max(0f, local) / 0.3f), 5);
             Add("Time efficiency", time, 5);
 
-            float total = 0; foreach (var b in Breakdown) total += b.points;
+            Add("Self-reliance (Gateway calls)", 5f * (1f - m.Gateway.Calls / (float)Resupply.MaxCalls), 5);
+
+            if (m.Tasks != null && m.Tasks.Enabled) { m.Tasks.Finish(); Add("Procedures (Tasks A-G)", 5f * m.Tasks.Completion, 5); }
+
+            float total = 0, max = 0;
+            foreach (var b in Breakdown) { total += b.points; max += b.max; }
+            total *= 100f / max;   // keeps the score on a 0-100 scale regardless of which items were added
             if (m.Failed) total = Mathf.Min(total, 40f);   // GDD: failed mission capped at 40, "Learning Mode"
             Score = Mathf.RoundToInt(total);
             Stars = Score >= 85 ? 3 : Score >= 70 ? 2 : Score >= 50 ? 1 : 0;

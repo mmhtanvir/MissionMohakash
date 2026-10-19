@@ -79,8 +79,8 @@ namespace Mohakash
         public static readonly (string id, int qty, string label)[] Standard =
         {
             ("HAB", 1, "Habitat"), ("SUI", 1, "Airlock"), ("SUIT-A", 1, "Spacesuit"), ("SOL-S", 2, "2 Solar arrays"), ("BAT", 1, "Battery"),
-            ("OGS", 1, "Oxygen maker"), ("SCR", 1, "CO2 scrubber"), ("CART", 2, "2 Scrubber cartridges"), ("SEIS", 1, "Seismometer"),
-            ("RAD", 1, "Radiation monitor"), ("STO", 1, "Storage"), ("SAMP", 1, "Sample box"),
+            ("OGS", 1, "Oxygen maker"), ("SCR", 1, "CO2 scrubber"), ("CART", 2, "2 Scrubber cartridges"), ("COM", 1, "Comms console"),
+            ("SEIS", 1, "Seismometer"), ("RAD", 1, "Radiation monitor"), ("STO", 1, "Storage"), ("SAMP", 1, "Sample box"),
         };
 
         public class Extra { public string Key, Name, Benefit; public (string id, int qty)[] Items; }
@@ -92,7 +92,7 @@ namespace Mohakash
             new Extra { Key = "sol3", Name = "Third solar array", Benefit = "+1 PW while the sun shines", Items = new[] { ("SOL-S", 3) } },
             new Extra { Key = "tank", Name = "Oxygen tank", Benefit = "stores +8 kg O2 instead of venting it", Items = new[] { ("TNK-O", 1) } },
             new Extra { Key = "water", Name = "Extra water (10 L)", Benefit = "more to drink and to turn into oxygen", Items = new[] { ("WATER", 1) } },
-            new Extra { Key = "com", Name = "Comms console", Benefit = "Earth link for your science data", Items = new[] { ("COM", 1) } },
+            new Extra { Key = "wtank", Name = "Water tank (40 L)", Benefit = "room for the extra water; the habitat alone holds 40 L", Items = new[] { ("TNK-W", 1) } },
             new Extra { Key = "spare", Name = "Spare parts kit", Benefit = "repair your suit once", Items = new[] { ("SPARE", 1) } },
             new Extra { Key = "cart", Name = "Extra CO2 cartridge", Benefit = "+3 kg CO2 capacity (safety margin)", Items = new[] { ("CART", 3) } },
         };

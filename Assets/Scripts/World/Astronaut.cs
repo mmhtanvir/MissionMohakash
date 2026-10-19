@@ -55,6 +55,7 @@ namespace Mohakash
         CharacterController cc;
         GameObject evaModel, casualModel;
         CrewRig evaRig, casualRig;
+        public CrewRig EvaRig => evaRig;
         GameObject helmetLamp;
         Transform cam;
 

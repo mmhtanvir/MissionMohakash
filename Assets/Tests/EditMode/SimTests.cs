@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Mohakash;
 using NUnit.Framework;
 
@@ -21,7 +23,7 @@ public class SimTests
         m.DeploySeismometer(100f, UnityEngine.Vector3.zero);
         m.Advance(0.1f);
         Assert.IsTrue(m.LogRadiationReading());
-        m.Advance(MissionModel.DurationH);
+        Live(m, MissionModel.DurationH);
         Assert.IsFalse(m.Failed, m.FailCause);
         Assert.AreEqual(3, m.PrimaryDone);
     }
@@ -116,12 +118,60 @@ public class SimTests
         m.Inside = true;
         m.Advance(0.1f);
         Assert.IsTrue(m.LogRadiationReading());
-        m.Advance(MissionModel.DurationH + 0.1f);
+        Live(m, MissionModel.DurationH + 0.1f);
         Assert.IsTrue(m.Ended);
         Assert.IsFalse(m.Failed, m.FailCause);
         Assert.AreEqual(3, m.PrimaryDone);
         var r = new MissionReport(m);
         Assert.GreaterOrEqual(r.Score, 50);
+    }
+
+    [Test]
+    public void InventorySlotsStackAndWeighLimits()
+    {
+        var inv = new Inventory();
+        var rock = Inventory.Sample;
+        var a = new ItemDef { Id = "A", Kg = 0.1f }; var b = new ItemDef { Id = "B", Kg = 0.1f }; var c = new ItemDef { Id = "C", Kg = 0.1f };
+        for (int i = 0; i < 12; i++) Assert.IsNull(inv.Add(rock));                  // 10 + 2: same item opens a second slot
+        Assert.AreEqual(2, inv.Slots.Count);
+        Assert.IsNull(inv.Add(a)); Assert.IsNull(inv.Add(b));                        // 4 pocket slots used
+        Assert.IsNotNull(inv.Add(c));                                                // no 5th slot without the bag
+        Assert.IsNull(inv.DropBag());                                                // pockets fit, no bag to drop is fine
+        inv.HasBag = true;
+        Assert.IsNull(inv.Add(c));
+        for (int i = 0; i < 7; i++) inv.Add(rock);                                   // 19 kg + 0.3 kg
+        Assert.IsNotNull(inv.Add(rock));                                             // 20 kg limit
+        Assert.IsNotNull(inv.DropBag());                                             // 5 slots don't fit in 4 pockets
+        Assert.AreEqual(19, inv.Remove(rock));
+    }
+
+    [Test]
+    public void GatewayDeliversAfterDelayAndLimitsCalls()
+    {
+        var m = new MissionModel(Catalog.Recommended());
+        var water = Resupply.Items[0]; var battery = Resupply.Items.First(i => i.Name.StartsWith("Battery"));
+        m.Water = 5f; float cap = m.BatteryCap;
+        Assert.IsNotNull(m.Gateway.Request(m, new List<SupplyItem> { battery, water }));   // 35 kg > drone
+        Assert.IsNull(m.Gateway.Request(m, new List<SupplyItem> { water }));
+        m.Advance(Resupply.DelayH - 0.5f);
+        Assert.Less(m.Water, 10f);
+        m.Advance(1f);
+        Assert.Greater(m.Water, 10f);
+        Assert.IsNull(m.Gateway.Request(m, new List<SupplyItem> { battery }));
+        m.Advance(Resupply.DelayH + 0.1f);
+        Assert.AreEqual(cap + 10f, m.BatteryCap);
+        Assert.IsNull(m.Gateway.Request(m, new List<SupplyItem> { water }));
+        Assert.IsNotNull(m.Gateway.Request(m, new List<SupplyItem> { water }));            // 4th call refused
+    }
+
+    /// <summary>Advances like a player who eats and drinks when allowed (hunger/hydration otherwise kill by ~h40).</summary>
+    static void Live(MissionModel m, float hours)
+    {
+        for (float t = 0f; t < hours; t += 1f)
+        {
+            m.Advance(UnityEngine.Mathf.Min(1f, hours - t));
+            m.EatMeal(out _); m.Drink(out _);
+        }
     }
 
     [Test]

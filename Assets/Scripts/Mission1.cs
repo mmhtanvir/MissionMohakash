@@ -24,11 +24,14 @@ namespace Mohakash
         public MissionUi Ui { get; private set; }
         public MissionReport Report { get; private set; }
         public Loadout Kit { get; private set; }
+        public MissionPlan Plan { get; private set; }
 
         public int Speed { get; private set; } = 1;   // 0 pause, 1, 2, 4
         public float TestSpeed = 1f;                  // AutoTest only
         public bool Paused { get; private set; }      // pause menu
         public bool SystemsOpen { get; private set; }
+        public Torch Torch { get; private set; }
+        public bool InventoryOpen { get; private set; }
         public bool InsideView => Model != null && Model.Inside;
         public bool CarryingSeis => Model != null && Model.SeisCarried;
         public float DistanceToHab => Player ? Flat(Player.transform.position - World.AirlockPoint).magnitude : 0f;
@@ -44,6 +47,41 @@ namespace Mohakash
         FullMapSystem FullMap;
         HabitatInterior Interior;
         public int SamplesAnalyzed { get; private set; }
+
+        public CommsWorkstation Comms { get; private set; }
+        float overrideSurveyUntil;
+
+        public StepCtx Ctx()
+        {
+            var p = Player.transform.position;
+            return new StepCtx { Pos = p, Yaw = Player.transform.eulerAngles.y, SlopeDeg = Slope(p) };
+        }
+
+        float Slope(Vector3 p)
+        {
+            const float h = 2f;
+            float dx = (World.OnGround(p.x + h, p.z).y - World.OnGround(p.x - h, p.z).y) / (2f * h);
+            float dz = (World.OnGround(p.x, p.z + h).y - World.OnGround(p.x, p.z - h).y) / (2f * h);
+            return Mathf.Atan(Mathf.Sqrt(dx * dx + dz * dz)) * Mathf.Rad2Deg;
+        }
+
+        void TryDeploySeismometer()
+        {
+            var tk = Model.Tasks;
+            if (!tk.Enabled || tk.AutoPass) { DeploySeismometer(); return; }
+            if (Time.time < overrideSurveyUntil) { tk.AcceptRisk(); overrideSurveyUntil = 0f; DeploySeismometer(); return; }
+            string why = tk.Survey(Ctx());
+            if (why == null) { DeploySeismometer(); return; }
+            Ui.Toast(why + "\nPress E again within 4 s to deploy here anyway (data quality drops).", Severity.Warning);
+            overrideSurveyUntil = Time.time + 4f;
+        }
+
+        public void ShelterUse()
+        {
+            if (Model.Tasks.Do(Spot.Shelter, Ctx())) return;
+            if (Model.SpeActive && Model.Inside) { Model.Sheltering = true; Ui.Toast("You settle back into the shielded corner.", Severity.Good); return; }
+            Ui.Toast("Radiation shelter: this is where you ride out a solar particle event.", Severity.Info);
+        }
 
         static Vector3 Flat(Vector3 v) { v.y = 0; return v; }
 
@@ -67,7 +105,9 @@ namespace Mohakash
         void Start()
         {
             Game.SetCursorFree(true);
-            Ui.ShowBriefing(() => { Current = Phase.Loadout; Ui.ShowLoadout(Launch); });
+            System.Action<Loadout> plan = null;
+            plan = kit => Ui.ShowPlanner(kit, p => { Plan = p; Launch(kit); }, () => Ui.ShowLoadout(plan));
+            Ui.ShowBriefing(() => { Current = Phase.Loadout; Ui.ShowLoadout(plan); });
         }
 
         // ------------------------------------------------------------------ Launch / landing
@@ -76,13 +116,17 @@ namespace Mohakash
         {
             Kit = kit.Clone();
             Model = new MissionModel(Kit);
+            Plan ??= MissionPlan.Suggested(Kit);
             Model.OnEvent += OnModelEvent;
             World.BuildOutpost(Kit);
             BuildInteractables();
             Interior = HabitatInterior.Build(this);
+            HabitatAmenities.Build(this, Interior.transform);   // galley + wash corner
 
             Player = Astronaut.Create(World.AirlockPoint + new Vector3(2.5f, 0.2f, -1.5f));
             Player.transform.rotation = Quaternion.Euler(0, MoonWorld.EarthAzimuth - 25f, 0);
+            Torch = Player.gameObject.AddComponent<Torch>();
+            Torch.Init(Cam.transform, () => Model.Inside || Player.Dead, Player.EvaRig);
             if (Kit.Has("ROV-SC"))
             {
                 Rover = Rover.Create(World, World.RoverStart);
@@ -96,7 +140,7 @@ namespace Mohakash
             Cam.AutoOrbit = false; Cam.Target = Player.transform; Cam.Distance = 4.4f; Cam.Height = 1.5f;
             Cam.Snap(MoonWorld.EarthAzimuth - 25f, 8f);   // sun behind the camera, Earth on the horizon
             Model.Inside = false;
-            Model.Log(Severity.Info, "You are outside, next to the airlock. First: pick up the seismometer crate.");
+            Model.Log(Severity.Info, "You are outside, next to the airlock. Start with Task A: go inside and work through the readiness checklist at the power & life support console. The seismometer crate can wait until the EVA checks are done.");
             Current = Phase.Operations;
             Ui.StartHud();
             // Minimap – created after the world and interactables are fully built
@@ -104,6 +148,20 @@ namespace Mohakash
             Minimap.Init(Ui.Root, this);
             FullMap = gameObject.AddComponent<FullMapSystem>();
             FullMap.Init(Ui.Root, this);
+
+            // Tasks
+            Model.Tasks.Enabled = true;
+            Model.Tasks.ManifestValid = () => Kit.WithinLimits;   // Task A: cargo within mass / budget limits
+            Model.Tasks.Say = (sev, text) => { Ui.Toast(text, sev); Model.Log(sev, text.Replace("\n", "  ")); };
+
+            // CommsNetwork
+            var sites = new[] { World.OnGround(46f, 52f), World.OnGround(-96f, -44f), World.OnGround(128f, -70f) };
+            Model.Net.Init(World.OnGround(-3f, -8f), p => World.HeightAt(p),
+                           new[] { "A", "B", "C" }, sites,
+                           () => Rover != null ? (Vector3?)Rover.transform.position : null);
+            Comms = gameObject.AddComponent<CommsWorkstation>();
+            Comms.Init(Ui.Root, this);
+
             Game.SetCursorFree(false);
         }
 
@@ -156,6 +214,7 @@ namespace Mohakash
                 {
                     if (Player.Busy || Player.IsCarrying) { Ui.Toast(Player.IsCarrying ? "Your hands are full: put the seismometer down first (E in open ground)." : "One moment...", Severity.Info); return; }
                     if (!Model.CollectSample(name, Flat(p - World.Hab.position).magnitude)) return;
+                    Model.Net.SurveyAt(name);   // radio check at this location
                     taken = true; beacon.SetActive(false);
                     var chunk = MoonWorld.Spawn("Rock_34W5ymEePk", p + Vector3.up * 0.05f, Quaternion.Euler(0, xz.x, 0), 0.08f, null, "Sample " + name + " (carried)");
                     if (chunk)
@@ -178,6 +237,56 @@ namespace Mohakash
             var lander = Interactable.Create(null, World.OnGround(-30f, 18f), 7f, parent);
             lander.Prompt = () => "Lander: the crew vehicle that brought you (mission ends at hour 72)";
             lander.Use = () => Ui.Toast("The lander is your ride home. Survive to hour 72 and complete the objectives.", Severity.Info);
+
+            // Outdoor hardware you can walk up to and read: every machine on the pad now answers when you press E
+            System.Func<Vector3, float, System.Func<bool>> near = (pos, r) => () => !Model.Inside && Player != null && Flat(Player.transform.position - pos).magnitude < r;
+
+            if (Kit.Has("OGS"))
+                AddInspect(parent, "Oxygen plant", World.OnGround(-11f, -1f), 4.2f, "Inspect the oxygen plant", () =>
+                {
+                    var l = Model.Load("OGS");
+                    string st = l == null ? "n/a" : l.Powered ? "RUNNING" : (string.IsNullOrEmpty(l.Why) ? "idle" : l.Why);
+                    return $"Oxygen plant (electrolysis): {st}. Mode {Model.Ogs}. Makes 0.10 kg O2/h from water. Cabin O2 {Model.CabinO2:0.0}/{Model.CabinO2Cap:0} kg, water {Model.Water:0} L. Change the mode in the Systems panel (Tab) inside.";
+                }, near);
+            if (Kit.Has("BAT"))
+                AddInspect(parent, "Battery bank", World.OnGround(-13f, -12f), 4.5f, "Read the battery bank", () =>
+                    $"Battery bank: {Model.Battery:0.0}/{Model.BatteryCap:0} PWh ({Model.BatteryPct:0%}). Solar {Model.Supply:0.0} PW in, {Model.Demand:0.0} PW out. Charge it before the shadow window at hour {MissionModel.ShadowStart:0}.", near);
+            if (Kit.Has("TNK-O"))
+                AddInspect(parent, "Oxygen tanks", World.OnGround(-16f, 3.9f), 4.2f, "Read the oxygen tank gauge", () =>
+                    $"Oxygen storage: cabin holds {Model.CabinO2:0.0} of {Model.CabinO2Cap:0} kg. {Model.O2Vented:0.00} kg has been vented so far (a full cabin cannot store more).", near);
+            if (Kit.Has("TNK-W"))
+                AddInspect(parent, "Water tank", World.OnGround(-16f, 8f), 3.6f, "Read the water tank gauge", () =>
+                    $"Water: {Model.Water:0} of {Model.WaterCap:0} L. The oxygen plant uses 1.125 L per kg of O2; the crew drinks about 3 L a day.", near);
+            if (Kit.Has("STO"))
+                AddInspect(parent, "Storage pallet", World.OnGround(-6f, 11f), 4.2f, "Check the storage pallet", () =>
+                    $"Storage: {Model.SamplesDelivered}/{Model.SampleCapacity} samples stored, {Model.SamplesCarried} in your bag, {Model.Spares} spare-parts kit(s), {Model.CartridgeKg:0.0} kg of scrubber capacity left.", near);
+            if (Kit.Has("GAR"))
+                AddInspect(parent, "Rover garage", World.OnGround(2f, 21f), 6f, "Check the rover garage", () =>
+                {
+                    var g = Model.Load("GAR");
+                    string st = g == null ? "n/a" : g.Powered ? "CHARGING" : (string.IsNullOrEmpty(g.Why) ? "idle" : g.Why);
+                    return $"Rover garage: {st}. " + (Rover != null ? $"Rover battery {Model.RoverBattery:0.0}/{Model.RoverCap:0} PWh. Park inside the 9 m charging zone in front of the door to recharge." : "No rover packed.");
+                }, near);
+            if (Kit.Has("COM"))
+                AddInspect(parent, "Surface antenna", World.OnGround(-3f, -8f), 4.5f, "Inspect the antenna and feed", () =>
+                {
+                    var n = Model.Net;
+                    n.Inspected = true; n.Version++;
+                    n.Log.Add($"h{Model.Hour:0.0}  Walk-round inspection of the surface antenna: tracker error {n.PointingErrDeg:0.0} deg, feed loss {n.CableLossDb:0.0} dB.");
+                    string verdict = n.PointingErrDeg > 1.5f ? "The tracker is pointing off Earth: re-home it from the comms workstation."
+                                   : n.CableLossDb > 1f ? "The feed connector is loose: reseat it from the comms workstation."
+                                   : "Pointing and feed look good.";
+                    return $"Surface antenna: condition {n.AntennaCondition:0%}, tracker error {n.PointingErrDeg:0.0} deg, feed loss {n.CableLossDb:0.0} dB. {verdict}";
+                }, near);
+        }
+
+        void AddInspect(Transform parent, string name, Vector3 pos, float radius, string prompt, System.Func<string> info, System.Func<Vector3, float, System.Func<bool>> near)
+        {
+            var it = Interactable.Create(name, pos, radius, parent);
+            it.MarkerColor = new Color(0.55f, 0.75f, 0.95f);
+            it.Prompt = () => prompt;
+            it.ShowMarker = near(pos, 24f);
+            it.Use = () => Ui.Toast(info(), Severity.Info);
         }
 
         // the seismometer crate is held in both hands (Astronaut.PickUp / PutDown); this is its size while carried
@@ -213,9 +322,10 @@ namespace Mohakash
 
             var pick = Interactable.Create("Seismometer", p, 2.6f, seisDeployed.transform);
             pick.MarkerColor = lamp.color;
-            pick.Prompt = () => "Pick up the seismometer (to move it)";
+            pick.Prompt = () => Model.Tasks.Prompt(Spot.Seis, Player.transform.eulerAngles.y) ?? "Pick up the seismometer (to move it)";
             pick.Use = () =>
             {
+                if (Model.Tasks.Do(Spot.Seis, Ctx(), one: true)) return;
                 var carried = MoonWorld.Spawn("PickupCrate", p + Vector3.up * 0.3f, Quaternion.identity, PlacedCrateScale, null, "SEIS (carried)");
                 if (carried == null) { Model.PickUpSeismometer(); Destroy(seisDeployed); seisDeployed = null; return; }
                 if (!Player.PickUp(carried, CarriedCrateScale, () => { Model.PickUpSeismometer(); Destroy(seisDeployed); seisDeployed = null; })) Destroy(carried);
@@ -337,6 +447,7 @@ namespace Mohakash
         public void ExitHabitat()
         {
             if (cinematic) return;
+            if (!Model.Tasks.CanExit(out var exitWhy)) { Ui.Toast(exitWhy, Severity.Warning); return; }
             if (Model.EvaLeft < 0.6f) { Model.ExitHabitat(); Ui?.Toast($"Suit not ready: {Model.EvaLeft:0.0} h. Rest or speed up time while it refills.", Severity.Warning); return; }
             if (Interior == null || Player == null || !Player.gameObject.activeSelf || Player.InBed) { ExitHabitatInstant(); return; }
             if (!Player.SuitedIndoors)
@@ -344,6 +455,7 @@ namespace Mohakash
                 Ui.Toast("You can't go outside without your EVA suit - there is no air out there. Put it on at the suit alcove next to the airlock (press E there).", Severity.Warning);
                 return;
             }
+            Model.Tasks.Do(Spot.Door, Ctx());   // radio / helmet lamp check
             StartCoroutine(ExitRoutine());
         }
 
@@ -366,6 +478,7 @@ namespace Mohakash
                 yield return Player.SuitOn(HabitatInterior.DockStand, HabitatInterior.DockYaw);
                 Ui.Toast(Model.EvaLeft < 0.6f ? $"Suit on, but it is still refilling ({Model.EvaLeft:0.0} h). Wait or rest before you go out."
                                               : $"Suit check OK: pressure 29.6 kPa, O2 flowing, comms on. {Model.EvaLeft:0.0} h of EVA. Head to the airlock.", Severity.Good);
+                Model.Tasks.Do(Spot.SuitDock, Ctx());   // Task C: the suit and backpack checks happen while suiting up
             }
             else
             {
@@ -405,8 +518,10 @@ namespace Mohakash
                 yield return Player.WalkTo(World.AirlockInside, 1.1f);
                 ch.InnerDoor.Open = false;
                 yield return ch.InnerDoor.Wait();
+                Model.Tasks.Do(Spot.Airlock, Ctx(), one: true);   // C5: inner hatch closed and sealed
                 // 3. pump down to vacuum
                 yield return ch.Depressurize(msg => Ui.Toast(msg, Severity.Info));
+                Model.Tasks.Do(Spot.Airlock, Ctx(), one: true);   // C6: depressurised before outer hatch opens
                 // 4. the hatch unlocks, pops and swings open, and stays open while the camera follows the astronaut out and down the stair
                 yield return hatch.SetOpen(true);
                 Cam.FollowShot(new Vector3(-1.3f, 0f, -0.1f));                     // behind the astronaut, out through the doorway
@@ -425,6 +540,8 @@ namespace Mohakash
                 Player.Teleport(World.AirlockPoint + new Vector3(1.8f, 0.3f, 0f));
                 yield return Fade(0f, 0.35f);
             }
+            Model.Tasks.OnExit();
+            Model.Tasks.Do(Spot.Airlock, Ctx());   // C7: exit and confirm comms/suit telemetry (sweeps any remaining)
             SetSpeed(1);
             Cam.EndShot();
             Player.EndScript(); cinematic = false;
@@ -491,6 +608,7 @@ namespace Mohakash
         public void SuitDockUse()
         {
             if (Model.Spares > 0 && Model.SuitIntegrity < 100f) { RepairSuit(); return; }
+            if (Model.Tasks.Do(Spot.SuitDock, Ctx())) return;
             Ui.Toast($"Suit: {Model.EvaLeft:0.0} h of EVA ready, integrity {Model.SuitIntegrity:0}%, {Model.Spares} spare kit(s). Oxygen, battery and CO2 refill while you are inside.", Severity.Info);
         }
 
@@ -498,8 +616,25 @@ namespace Mohakash
         {
             bool com = Model.Load("COM")?.Powered ?? false;
             if (!com) { Ui.Toast("Earth link OFFLINE: the COM load has no power. Switch it on at the power & life support console.", Severity.Warning); return; }
-            Ui.Toast("Mission Control (1.3 s radio delay): " + Ui.NextHintPublic(), Severity.Info);
-            Model.Log(Severity.Info, "Called Mission Control for a status check.");
+            Comms.OpenUi();
+        }
+
+        public void Galley()
+        {
+            if (Model.EatMeal(out var why)) return;   // success is logged (and toasted) by the model
+            Ui.Toast(why, Severity.Info);
+        }
+
+        public void Drink()
+        {
+            if (Model.Drink(out var why)) return;
+            Ui.Toast(why, Severity.Info);
+        }
+
+        public void WashUp()
+        {
+            if (Model.WashUp(out var why)) return;
+            Ui.Toast(why, Severity.Info);
         }
 
         public void HealthScan()
@@ -534,6 +669,21 @@ namespace Mohakash
         {
             SystemsOpen = !SystemsOpen;
             Game.SetCursorFree(SystemsOpen);
+            if (SystemsOpen) Model.Tasks.Do(Spot.Systems, Ctx());
+        }
+
+        public void BagUse()
+        {
+            var inv = Model.Inv;
+            if (!inv.HasBag) { inv.HasBag = true; Ui.Toast("EVA bag taken: 20 slots, up to 20 kg. Open the inventory with F.", Severity.Good); return; }
+            var why = inv.DropBag();
+            Ui.Toast(why ?? "EVA bag stowed. You have 4 pocket slots.", why == null ? Severity.Info : Severity.Warning);
+        }
+
+        public void ToggleInventory()
+        {
+            InventoryOpen = !InventoryOpen;
+            Game.SetCursorFree(InventoryOpen);
         }
 
         void OnModelEvent(LogEntry e)
@@ -548,10 +698,12 @@ namespace Mohakash
             if (Current != Phase.Operations) { GameInput.EndFrame(); return; }
 
             if (GameInput.Pause && Ui.ControlsOpen) { Ui.ToggleControls(); GameInput.EndFrame(); return; }
-            if (GameInput.Pause) { if (SystemsOpen) ToggleSystems(); else SetPaused(!Paused); }
+            if (GameInput.Pause && Comms != null && Comms.Open) { Comms.Close(); GameInput.EndFrame(); return; }
+            if (GameInput.Pause) { if (InventoryOpen) ToggleInventory(); else if (SystemsOpen) ToggleSystems(); else SetPaused(!Paused); }
             if (Paused) { GameInput.EndFrame(); return; }
 
-            if (GameInput.Systems) ToggleSystems();
+            if (GameInput.Systems) { if (InventoryOpen) ToggleInventory(); ToggleSystems(); }
+            if (GameInput.Inventory) { if (SystemsOpen) ToggleSystems(); ToggleInventory(); }
             if (GameInput.Help) Ui.ToggleControls();
             int sk = GameInput.SpeedKey; if (sk >= 0) SetSpeed(sk);
 
@@ -566,7 +718,17 @@ namespace Mohakash
             Model.Advance(hours);
             Player.SpeedFactor = Model.Fatigue > 70f ? 0.75f : 1f;
 
-            World.SetSun(Model.Sun);
+            // Tasks checklist
+            var tk = Model.Tasks;
+            tk.PlayerPos = Player.transform.position;
+            tk.ShelterDist = Interior != null && Interior.ShelterSpot != null
+                ? Vector3.Distance(Player.transform.position, Interior.ShelterSpot.transform.position) : 99f;
+            tk.Update();
+
+            // CommsNetwork
+            Model.Net.Update(Time.unscaledDeltaTime);
+
+            World.SetSunNatural(LunarClock.ElevationDeg(Model.Hour), LunarClock.AzimuthDeg(Model.Hour), Model.Sun);
             UpdateRings();
             Minimap?.Tick();
             FullMap?.Tick();
@@ -580,12 +742,13 @@ namespace Mohakash
         void HandleWorldInput()
         {
             if (Model.Inside && Model.Resting && GameInput.Move.sqrMagnitude > 0.04f) ToggleRest();   // walking away wakes you up
-            bool canAct = !SystemsOpen && !Player.Dead;
+            bool canAct = !SystemsOpen && !InventoryOpen && !(Comms != null && Comms.Open) && !Player.Dead;
             Player.Frozen = !canAct || (Rover != null && Rover.Driving);
 
             Focus = null;
             if (!canAct) return;
             if (Player.Busy) return;                         // walking to / crouching for / lowering an object
+            if (GameInput.Torch && Torch.Toggle()) Ui.Toast(Torch.On ? "Torch on." : "Torch off.", Severity.Info);
 
             if (Rover != null && Rover.Driving)
             {
@@ -599,7 +762,7 @@ namespace Mohakash
             if (GameInput.Interact)
             {
                 if (Focus != null) { Focus.Use(); Player.PlayInteract(); }
-                else if (Model.SeisCarried && !Model.Inside) DeploySeismometer();
+                else if (Model.SeisCarried && !Model.Inside) TryDeploySeismometer();
             }
         }
 

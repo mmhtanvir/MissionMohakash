@@ -15,6 +15,8 @@ namespace Mohakash
                 ("Space", "Jump (slow, Moon gravity)"),
                 ("Mouse wheel", "Zoom camera in / out"),
                 ("E", "Use / pick up / set down (seismometer, samples, airlock, radiation post, clean solar panels)"),
+                ("T", "Torch on / off (outside only)"),
+                ("F", "Inventory: what you carry, torch, stores and cargo"),
             }),
             ("ROVER", new[]
             {

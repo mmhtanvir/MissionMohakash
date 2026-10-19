@@ -56,6 +56,7 @@ namespace Mohakash
         public float CabinO2, CabinO2Cap, Water, WaterCap, Food, CO2, CartridgeKg;
         public float O2Produced, O2Consumed, O2Vented, O2ZeroHours;
         public float Health = 100f, Fatigue, Dose;
+        public float Hunger = 100f, Hydration = 100f;   // 100 = fed / hydrated, 0 = starving / dehydrated
         public bool Inside = true, Sprinting, Resting, Driving;
 
         public const float SuitO2Max = 4.5f, SuitBattMax = 4.2f, SuitCO2Max = 4.0f;   // Suit A (GDD §18)
@@ -70,12 +71,23 @@ namespace Mohakash
         public Vector3 SeisPos;   // world position of the deployed seismometer (set by DeploySeismometer)
         public float SeisDistance, SeisPoweredHours, SeisGoodHours;
         public bool QuakeRecorded, QuakeMissed;
-        public int RadReadings, SamplesCarried, SamplesDelivered, SampleCapacity;
+        public int RadReadings, SamplesDelivered, SampleCapacity;
+        public readonly Inventory Inv = new Inventory();
+        public readonly Resupply Gateway = new Resupply();
+        public int SamplesCarried => Inv.Count(Inventory.Sample);
 
         public int CriticalEvents, NearFailures;
         public float FarthestFromBase, PrimaryDoneHour = -1f;
 
         public bool Ended, Failed;
+
+        // ---- MissionTasks ----
+        public MissionTasks Tasks;
+        public bool SeisInstalled = true;        // false from deployment until the self-test passes
+        public float SeisQuality = 1f;           // placement, orientation and slope reduce data quality
+        public bool Sheltering;                  // in the shielded corner during a solar particle event
+        public float CabinPressureKpa => Mathf.Lerp(40f, 101.3f, Mathf.Clamp01(CabinO2 / 3f));   // derived from cabin O2
+        public CommsNetwork Net;
         public string FailCause = "";
         public readonly List<LogEntry> Events = new List<LogEntry>();
         public readonly List<DataRecord> Data = new List<DataRecord>();
@@ -100,6 +112,8 @@ namespace Mohakash
             RoverCap = kit.Has("ROV-SC") ? 6f : 0f;
             RoverBattery = RoverCap;
             SampleCapacity = kit.Has("SAMP") && kit.Has("STO") ? 5 : 0;
+            Tasks = new MissionTasks(this);
+            Net = new CommsNetwork(this);
 
             // GDD §14 power priority: 1 life support, 2 suit, 3 comms, 4 science, 6 rover charging.
             AddLoad("HAB", "Habitat", 0.6f, 1, true);
@@ -157,6 +171,7 @@ namespace Mohakash
 
         public void PickUpSeismometer()
         {
+            Tasks.ResetSeis();
             if (SeisDeployed) Log(Severity.Info, "Seismometer picked up for repositioning.");
             SeisDeployed = false; SeisCarried = true;
         }
@@ -172,6 +187,7 @@ namespace Mohakash
             Data.Add(new DataRecord { Hour = Hour, Instrument = "SEIS", What = "Deployment",
                 Where = $"{distanceFromHab:0} m from HAB (x {pos.x:0}, z {pos.z:0})",
                 Conditions = distanceFromHab >= SeisMinDistance ? "Outside base noise radius" : "INSIDE base noise radius (noisy)" });
+            if (Tasks.Enabled && !Tasks.AutoPass) Tasks.OnSeisDeployed();
         }
 
         public bool LogRadiationReading()
@@ -190,7 +206,8 @@ namespace Mohakash
         {
             if (SampleCapacity == 0) { Log(Severity.Warning, "No sample container in your loadout: cannot collect."); return false; }
             if (SamplesCarried + SamplesDelivered >= SampleCapacity) { Log(Severity.Warning, "Sample container full."); return false; }
-            SamplesCarried++;
+            var why = Inv.Add(Inventory.Sample);
+            if (why != null) { Log(Severity.Warning, why); return false; }
             Data.Add(new DataRecord { Hour = Hour, Instrument = "EVA", What = $"Regolith sample {site}", Where = $"{distance:0} m from HAB",
                 Conditions = $"Suit integrity {SuitIntegrity:0}%" });
             Log(Severity.Good, $"Regolith sample {site} bagged. Bring it back inside to deliver it.");
@@ -200,7 +217,7 @@ namespace Mohakash
         public void EnterHabitat()
         {
             Inside = true; Driving = false;
-            if (SamplesCarried > 0) { SamplesDelivered += SamplesCarried; Log(Severity.Good, $"{SamplesCarried} sample(s) stored. Delivered: {SamplesDelivered}."); SamplesCarried = 0; }
+            if (SamplesCarried > 0) { int n = Inv.Remove(Inventory.Sample); SamplesDelivered += n; Log(Severity.Good, $"{n} sample(s) stored. Delivered: {SamplesDelivered}."); }
             Log(Severity.Info, "Entered the habitat. Suit refilling at the Suit Station.");
         }
 
@@ -221,6 +238,55 @@ namespace Mohakash
         }
 
         public void CleanArrays() { Dust = 0f; Log(Severity.Good, "Solar arrays cleaned of dust."); }
+
+        // ---- Galley and wash corner: the food / water stores finally have a player-facing use ----
+        public const float MealGapH = 6f, WashGapH = 12f;
+        public float LastMealHour = -99f, LastWashHour = -99f;
+        public int MealsEaten, WashesDone;
+        public float FoodDaysLeft => Food / (104f * 24f);
+
+        /// <summary>Eat at the galley. The meal is part of the normal food burn (no extra food used); it takes the edge off fatigue.</summary>
+        public bool EatMeal(out string refusal)
+        {
+            refusal = null;
+            if (!Inside) { refusal = "The galley is inside the habitat."; return false; }
+            if (Food <= 0f) { refusal = "The galley is empty: no food left."; return false; }
+            float wait = MealGapH - (Hour - LastMealHour);
+            if (wait > 0f) { refusal = $"You ate recently. Next meal in {wait:0.0} h. Food left: {FoodDaysLeft:0.0} days, water {Water:0} L."; return false; }
+            LastMealHour = Hour; MealsEaten++;
+            Hunger = Mathf.Min(100f, Hunger + MealHunger); Hydration = Mathf.Min(100f, Hydration + 10f);
+            Fatigue = Mathf.Max(0f, Fatigue - 6f);
+            Log(Severity.Good, $"Meal eaten (rehydrated ration). Fatigue eased. Food left: {FoodDaysLeft:0.0} days.");
+            return true;
+        }
+
+        public const float MealHunger = 40f, DrinkHydration = 35f;
+
+        /// <summary>Drink at the galley water dispenser. Like meals, it is part of the normal 3 L/day crew water burn (no extra water used).</summary>
+        public bool Drink(out string refusal)
+        {
+            refusal = null;
+            if (!Inside) { refusal = "The water dispenser is inside the habitat."; return false; }
+            if (Hydration >= 95f) { refusal = "You are not thirsty."; return false; }
+            if (Water <= 0f) { refusal = "The water tank is empty."; return false; }
+            Hydration = Mathf.Min(100f, Hydration + DrinkHydration);
+            Log(Severity.Good, $"Drank water. Tank: {Water:0} L.");
+            return true;
+        }
+
+        /// <summary>Wash up at the hygiene corner: costs 1 L of water, so it is a real trade-off when water is short.</summary>
+        public bool WashUp(out string refusal)
+        {
+            refusal = null;
+            if (!Inside) { refusal = "The wash basin is inside the habitat."; return false; }
+            float wait = WashGapH - (Hour - LastWashHour);
+            if (wait > 0f) { refusal = $"You washed recently. Next wash in {wait:0.0} h."; return false; }
+            if (Water < 4f) { refusal = $"Water is too low to spare ({Water:0.0} L). Keep it for drinking and the oxygen generator."; return false; }
+            LastWashHour = Hour; WashesDone++;
+            Water -= 1f; Fatigue = Mathf.Max(0f, Fatigue - 3f);
+            Log(Severity.Good, "Washed up (1 L of water used). Dust from the suit liner rinsed off; fatigue eased.");
+            return true;
+        }
 
         /// <summary>Rover energy for a distance driven. Returns false when the battery is empty.</summary>
         public bool UseRoverEnergy(float meters)
@@ -346,7 +412,7 @@ namespace Mohakash
 
             // --- Radiation (GDD §17, §23) ---
             float doseRate = Inside ? 0.01f : 0.04f;
-            if (SpeActive) doseRate += Inside ? 0.2f : 6f;
+            if (SpeActive) doseRate += Inside ? (Sheltering ? 0.03f : 0.2f) : 6f;
             Dose += doseRate * dt;
 
             // --- Rover charging ---
@@ -355,10 +421,12 @@ namespace Mohakash
             // --- Seismometer + quake window ---
             if (SeisDeployed && Powered("SEIS"))
             {
-                SeisPoweredHours += dt;
-                if (SeisDistance >= SeisMinDistance) SeisGoodHours += dt;
-            }
-            if (prevHour < QuakeHour && Hour >= QuakeHour)
+                if (SeisInstalled)
+                {
+                    SeisPoweredHours += dt;
+                    if (SeisDistance >= SeisMinDistance) SeisGoodHours += dt * SeisQuality;
+                }
+            }            if (prevHour < QuakeHour && Hour >= QuakeHour)
             {
                 if (SeisDeployed && Powered("SEIS") && SeisDistance >= SeisMinDistance)
                 {
@@ -382,13 +450,20 @@ namespace Mohakash
             if (Water <= 0f) Health -= 2f * dt;
             if (Food <= 0f) Health -= 1f * dt;
             if (Dose > DoseAllowance) Health -= 5f * dt;
-            if (Inside && !hypoxic && CO2 <= 0.6f && Water > 0f && Food > 0f) Health += 2f * dt;
+            // hunger empties in ~24 h, thirst in ~16 h (faster in the suit, slower asleep); at 0 they hurt health
+            float burn = Resting ? 0.5f : Inside ? 1f : 1.5f;
+            Hunger = Mathf.Clamp(Hunger - 100f / 24f * burn * dt, 0f, 100f);
+            Hydration = Mathf.Clamp(Hydration - 100f / 16f * burn * dt, 0f, 100f);
+            if (Hunger <= 0f) Health -= 2f * dt;
+            if (Hydration <= 0f) Health -= 4f * dt;
+            if (Inside && !hypoxic && CO2 <= 0.6f && Water > 0f && Food > 0f && Hunger > 20f && Hydration > 20f) Health += 2f * dt;
             Health = Mathf.Clamp(Health, 0f, 100f);
             Fatigue += (Inside ? (Resting ? -12f : 0.3f) : (Sprinting ? 4f : 2f)) * dt;
             Fatigue = Mathf.Clamp(Fatigue, 0f, 100f);
 
             if (CabinO2 <= 0f) O2ZeroHours += dt; else O2ZeroHours = 0f;
 
+            Gateway.Tick(this);
             CheckWarnings();
 
             if (PrimaryDoneHour < 0f && P1Seismometer && P2Radiation) PrimaryDoneHour = Hour;
@@ -445,6 +520,10 @@ namespace Mohakash
                 Log(Severity.Warning, "Shadow window: the ridge is in shadow. Solar output 0 for 6 h.");
                 if (Battery < ShadowEnergyNeeded) Cause($"Entered the 6 h shadow window with {Battery:0.0} PWh stored but ~{ShadowEnergyNeeded:0.0} PWh needed");
             }
+            Check(Gateway.Calls < Resupply.MaxCalls && Resupply.Items.Any(i => i.Low(this)), "gateway-hint", Severity.Info,
+                "Supplies running low: you can call Lunar Gateway for a cargo drone (Tab > Call Gateway).");
+            Check(Hydration < 25f, "thirsty", Severity.Warning, "You are getting dehydrated. Drink at the water dispenser in the galley.");
+            Check(Hunger < 25f, "hungry", Severity.Warning, "You are getting hungry. Eat a meal at the galley.");
             if (Hour >= ShadowEnd) Latch("shadow-end", Severity.Good, "Sunlight is back on the ridge.");
             if (Hour >= SpeStart - 1f / 6f && Hour < SpeStart && Powered("RAD"))
                 Latch("spe-warn", Severity.Critical, "RAD ALERT: solar particle event in 10 minutes. Get inside the habitat!");
