@@ -290,6 +290,15 @@ public static class ProjectSetup
             EditorApplication.Exit(1);
     }
 
+    [MenuItem("Mission Mohakash/Build Linux")]
+    public static void BuildLinux()
+    {
+        var r = BuildPipeline.BuildPlayer(EditorBuildSettings.scenes.Select(s => s.path).ToArray(),
+            "Builds/Linux/MissionMohakash.x86_64", BuildTarget.StandaloneLinux64, BuildOptions.None);
+        Debug.Log("[Build Linux] " + r.summary.result + " " + r.summary.totalSize / (1024 * 1024) + " MB, errors " + r.summary.totalErrors);
+        if (Application.isBatchMode && r.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
     /// <summary>Batch entry point: setup + build macOS.</summary>
     public static void SetupAndBuild() { Run(); BuildMac(); }
 
