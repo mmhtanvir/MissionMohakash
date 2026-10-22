@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Mohakash
 {
     /// <summary>
-    /// The SUI airlock tunnel on the surface (Connector.glb) is a walk-in chamber: the astronaut steps in through the outer
+    /// The airlock capsule on the surface habitat is a walk-in chamber: the astronaut steps in through the outer
     /// hatch, the chamber cycles here (vents, warning beacon, pressure panel, air shower), and the inner door at the HAB end
     /// leads into the habitat. Transform: floor centre of the chamber, local +Z toward the outer hatch.
     /// </summary>
@@ -18,12 +18,13 @@ namespace Mohakash
         Light lamp; GameObject beacon; ParticleSystem ventL, ventR, shower;
         TextMesh panelText; Renderer panelBack; Material panelRed, panelAmber, panelGreen;
 
-        public static AirlockChamber Create(Transform parent, Vector3 floorCenter, Vector3 towardHatch)
+        public static AirlockChamber Create(Transform parent, Vector3 floorCenter, Vector3 towardHatch, float halfLength = 1.55f, float halfWidth = 0.95f, float height = 2.23f)
         {
             var go = new GameObject("Airlock chamber");
             go.transform.SetParent(parent, true);
             go.transform.SetPositionAndRotation(floorCenter, Quaternion.LookRotation(towardHatch, Vector3.up));
             var c = go.AddComponent<AirlockChamber>();
+            c.HalfLength = halfLength; c.HalfWidth = halfWidth; c.Height = height;
             c.Build();
             return c;
         }

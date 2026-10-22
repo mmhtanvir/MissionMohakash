@@ -200,7 +200,7 @@ namespace Mohakash
 
             // CommsNetwork
             var sites = new[] { World.OnGround(46f, 52f), World.OnGround(-96f, -44f), World.OnGround(128f, -70f) };
-            Model.Net.Init(World.OnGround(-3f, -8f), p => World.HeightAt(p),
+            Model.Net.Init(World.OnGround(-6f, -8f), p => World.HeightAt(p),
                            new[] { "A", "B", "C" }, sites,
                            () => Rover != null ? (Vector3?)Rover.transform.position : null);
             Comms = gameObject.AddComponent<CommsWorkstation>();
@@ -286,7 +286,7 @@ namespace Mohakash
             System.Func<Vector3, float, System.Func<bool>> near = (pos, r) => () => !Model.Inside && Player != null && Flat(Player.transform.position - pos).magnitude < r;
 
             if (Kit.Has("OGS"))
-                AddInspect(parent, "Oxygen plant", World.OnGround(-11f, -1f), 4.2f, "Inspect the oxygen plant", () =>
+                AddInspect(parent, "Oxygen plant", World.OnGround(-14f, -6f), 4.2f, "Inspect the oxygen plant", () =>
                 {
                     var l = Model.Load("OGS");
                     string st = l == null ? "n/a" : l.Powered ? "RUNNING" : (string.IsNullOrEmpty(l.Why) ? "idle" : l.Why);
@@ -312,7 +312,7 @@ namespace Mohakash
                     return $"Rover garage: {st}. " + (Rover != null ? $"Rover battery {Model.RoverBattery:0.0}/{Model.RoverCap:0} PWh. Park inside the 9 m charging zone in front of the door to recharge." : "No rover packed.");
                 }, near);
             if (Kit.Has("COM"))
-                AddInspect(parent, "Surface antenna", World.OnGround(-3f, -8f), 4.5f, "Inspect the antenna and feed", () =>
+                AddInspect(parent, "Surface antenna", World.OnGround(-6f, -8f), 4.5f, "Inspect the antenna and feed", () =>
                 {
                     var n = Model.Net;
                     n.Inspected = true; n.Version++;
@@ -389,6 +389,10 @@ namespace Mohakash
             StartCoroutine(EnterRoutine());
         }
 
+        // the interior airlock door used to be at the old room's -Z; these turn the old directions to wherever it is now
+        static Quaternion DoorFrame => Quaternion.Euler(0f, HabitatInterior.AirlockYaw, 0f);
+        static Vector3 InShot(Vector3 oldOffset) => DoorFrame * oldOffset;
+
         void InteriorCamera(float yaw, float pitch)
         {
             Cam.Target = Player.transform; Cam.AutoOrbit = false; Cam.Distance = 2.9f; Cam.Height = 1.45f;
@@ -408,12 +412,12 @@ namespace Mohakash
                 yield return Player.TurnTo(-90f, 0.5f);
                 yield return hatch.SetOpen(true);
                 // 2. up the stair and through the open hatch, camera following right behind into the chamber
-                Cam.FollowShot(new Vector3(1.45f, 0f, -0.12f));
+                Cam.FollowShot(new Vector3(1.9f, 0f, -0.6f), eye: 1.85f);          // off to the side of the life-support pack
                 yield return Player.WalkTo(World.AirlockStairFoot, 1.1f, stop: false);
                 yield return Player.WalkTo(World.AirlockThreshold, 0.9f, stop: false);
                 yield return Player.WalkTo(World.AirlockInside, 1.1f);
                 // 3. only now does the hatch close: turn to watch it, camera moves to the inner-door end looking back
-                Cam.FollowShot(new Vector3(-1.05f, 0f, -0.45f));
+                Cam.FollowShot(new Vector3(-1.3f, 0f, -0.7f), eye: 1.85f);
                 yield return Player.TurnTo(90f, 0.8f);
                 hatch.Open = false;
                 yield return hatch.Wait();
@@ -422,7 +426,7 @@ namespace Mohakash
                 yield return ch.Repressurize(Player, msg => Ui.Toast(msg, Severity.Info));
                 // 5. inner door opens, step through into the habitat
                 yield return ch.InnerDoor.SetOpen(true);
-                Cam.FollowShot(new Vector3(1.2f, 0f, -0.25f));
+                Cam.FollowShot(new Vector3(1.3f, 0f, -0.7f), eye: 1.85f);
                 yield return Player.WalkTo(World.AirlockInnerPoint, 1.1f);
                 yield return Fade(1f, 0.35f);
                 ch.InnerDoor.Open = false; ch.ShowIdle(false);
@@ -430,10 +434,10 @@ namespace Mohakash
             Model.EnterHabitat();
             Player.SetIndoors(true, suited: true);
             Player.Teleport(HabitatInterior.DoorwayPoint); Player.BeginScript(); Player.EndScript();   // re-disable the controller after Teleport
-            Player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
-            InteriorCamera(0f, 10f);
+            Player.transform.rotation = Quaternion.LookRotation(DoorFrame * Vector3.forward);
+            InteriorCamera(HabitatInterior.AirlockYaw, 10f);
             Interior.AirlockDoor.Open = true;
-            Cam.FollowShot(new Vector3(0.8f, 0f, -1.0f), snap: true);           // behind the astronaut, stepping into the room
+            Cam.FollowShot(InShot(new Vector3(0.8f, 0f, -1.0f)), snap: true);   // behind the astronaut, stepping into the room
             yield return Fade(0f, 0.35f);
             yield return Player.WalkTo(HabitatInterior.InsideDoorPoint, 1.2f);
             Interior.AirlockDoor.Open = false;
@@ -472,9 +476,9 @@ namespace Mohakash
                 Player.gameObject.SetActive(true);
                 Player.SetIndoors(true);
                 Player.Teleport(HabitatInterior.SpawnPoint);
-                Player.transform.rotation = Quaternion.LookRotation(Vector3.forward);
+                Player.transform.rotation = Quaternion.LookRotation(DoorFrame * Vector3.forward);
                 Cam.Target = Player.transform; Cam.AutoOrbit = false; Cam.Distance = 2.9f; Cam.Height = 1.45f;
-                Cam.ClampToTerrain = false; Cam.MaxPitch = 36f; Cam.Snap(0f, 12f);
+                Cam.ClampToTerrain = false; Cam.MaxPitch = 36f; Cam.Snap(HabitatInterior.AirlockYaw, 12f);
                 SystemsOpen = false;
                 Game.SetCursorFree(false);
                 Ui.Toast("Inside the habitat. Walk to a station and press E: bunk, lab, console, suit dock, comms, health scan, window.", Severity.Info);
@@ -539,9 +543,9 @@ namespace Mohakash
             if (Model.Resting) ToggleRest();
             Player.BeginScript();
             // 1. in the room: walk to the airlock door, it slides open, step into the doorway
-            Cam.FollowShot(new Vector3(0.8f, 0f, 1.25f));
+            Cam.FollowShot(InShot(new Vector3(0.8f, 0f, 1.25f)));
             yield return Player.WalkTo(HabitatInterior.InsideDoorPoint);
-            yield return Player.TurnTo(180f);
+            yield return Player.TurnTo(180f + HabitatInterior.AirlockYaw);
             yield return Interior.AirlockDoor.SetOpen(true);
             yield return Player.WalkTo(HabitatInterior.DoorwayPoint, 1.1f);
             yield return Fade(1f, 0.35f);
@@ -557,7 +561,7 @@ namespace Mohakash
                 Player.Teleport(World.AirlockInnerPoint); Player.BeginScript(); Player.EndScript();
                 Player.transform.rotation = Quaternion.LookRotation(Vector3.right);
                 ch.InnerDoor.Open = true; ch.ShowIdle(true);
-                Cam.FollowShot(new Vector3(1.25f, 0f, -0.45f), snap: true);        // ahead of the astronaut, looking back at the inner door
+                Cam.FollowShot(new Vector3(1.3f, 0f, -0.7f), snap: true, eye: 1.85f);   // ahead of the astronaut, looking back at the inner door
                 yield return Fade(0f, 0.35f);
                 yield return Player.WalkTo(World.AirlockInside, 1.1f);
                 ch.InnerDoor.Open = false;
@@ -568,7 +572,7 @@ namespace Mohakash
                 Model.Tasks.Do(Spot.Airlock, Ctx(), one: true);   // C6: depressurised before outer hatch opens
                 // 4. the hatch unlocks, pops and swings open, and stays open while the camera follows the astronaut out and down the stair
                 yield return hatch.SetOpen(true);
-                Cam.FollowShot(new Vector3(-1.3f, 0f, -0.1f));                     // behind the astronaut, out through the doorway
+                Cam.FollowShot(new Vector3(-1.5f, 0f, -0.6f), eye: 1.85f);         // behind and beside the astronaut, out through the doorway
                 yield return Player.WalkTo(World.AirlockThreshold, 1.0f, stop: false);
                 yield return Player.WalkTo(World.AirlockStairFoot, 0.9f, stop: false);
                 yield return Player.WalkTo(World.OnGround(World.AirlockPoint.x + 1.8f, World.AirlockPoint.z));
@@ -881,5 +885,6 @@ namespace Mohakash
         public void TestTeleport(Vector3 xz) { if (Player.gameObject.activeSelf) Player.Teleport(World.OnGround(xz.x, xz.z, 0.3f)); }
         public void TestDeploySeis() => DeploySeismometer(true);
         public void TestEnterHabitat() => EnterHabitatInstant();
+        public void TestEnterCinematic() => EnterHabitat();
     }
 }

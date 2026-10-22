@@ -49,8 +49,8 @@ namespace Mohakash
         float range = DefaultRange;    // current metres-per-half-map
         readonly Dictionary<Interactable, VisualElement> markDots = new Dictionary<Interactable, VisualElement>();
 
-        // ── Inside: habitat floor plan (12 x 9 m room, north up) ────────────
-        const float RoomPx = 32f;      // pixels per metre
+        // ── Inside: habitat floor plan (cross: four arms around the command hub, north up) ────────────
+        const float RoomPx = 10f;      // pixels per metre
         VisualElement insideWrap, room, insidePlayer;
         readonly List<(Rect r, float h)> furniture = new List<(Rect, float)>();   // top-down footprints in room metres, h = height
         readonly Dictionary<Interactable, (VisualElement box, Label lbl)> roomIcons = new Dictionary<Interactable, (VisualElement, Label)>();
@@ -71,16 +71,13 @@ namespace Mohakash
             insideWrap.Add(title);
             room = new VisualElement();
             room.style.width = HabitatInterior.W * RoomPx; room.style.height = HabitatInterior.D * RoomPx;
-            room.style.backgroundColor = new Color(0.08f, 0.11f, 0.16f, 0.9f);
-            room.style.borderTopWidth = room.style.borderBottomWidth = room.style.borderLeftWidth = room.style.borderRightWidth = 2f;
-            var wall = new Color(0.55f, 0.65f, 0.8f);
-            room.style.borderTopColor = room.style.borderBottomColor = room.style.borderLeftColor = room.style.borderRightColor = wall;
             insideWrap.Add(room);
             room.generateVisualContent += DrawFurniture;
-            // airlock gap in the south wall
+            // airlock door at the end of the airlock room (east arm)
             var gap = new VisualElement();
-            gap.style.position = Position.Absolute; gap.style.height = 4; gap.style.width = 1.4f * RoomPx;
-            gap.style.left = (HabitatInterior.W / 2f - 0.7f) * RoomPx; gap.style.bottom = -3;
+            var door = RoomPos(HabitatInterior.InsideDoorPoint + new Vector3(1.4f, 0f, 0f));
+            gap.style.position = Position.Absolute; gap.style.width = 4; gap.style.height = 1.4f * RoomPx;
+            gap.style.left = door.x - 2f; gap.style.top = door.y - 0.7f * RoomPx;
             gap.style.backgroundColor = new Color(0.3f, 1f, 0.5f);
             room.Add(gap);
             var n = new Label("N"); n.style.position = Position.Absolute; n.style.top = 2; n.style.right = 6; n.style.fontSize = 11; n.style.color = new Color(1, 1, 1, 0.6f);
@@ -101,7 +98,7 @@ namespace Mohakash
                 float x0 = b.min.x - o.x, x1 = b.max.x - o.x, z0 = b.min.z - o.z, z1 = b.max.z - o.z, y0 = b.min.y - o.y, h = b.max.y - o.y;
                 if (y0 > 1.2f || h < 0.25f) continue;                                            // ceiling / wall-hung items, floor strips
                 if (x1 - x0 > HabitatInterior.W * 0.8f || z1 - z0 > HabitatInterior.D * 0.8f) continue;   // floor, walls, rails
-                if (x1 < -HabitatInterior.W / 2f || x0 > HabitatInterior.W / 2f || z1 < -HabitatInterior.D / 2f || z0 > HabitatInterior.D / 2f) continue;   // airlock tunnel
+                                if (x1 < -HabitatInterior.W / 2f || x0 > HabitatInterior.W / 2f || z1 < -HabitatInterior.D / 2f || z0 > HabitatInterior.D / 2f) continue;   // airlock tunnel
                 furniture.Add((Rect.MinMaxRect(x0, z0, x1, z1), h));
             }
             room.MarkDirtyRepaint();
@@ -110,6 +107,16 @@ namespace Mohakash
         void DrawFurniture(MeshGenerationContext mgc)
         {
             var pt = mgc.painter2D;
+            // floor plan: the two arms crossing at the hub
+            pt.fillColor = new Color(0.08f, 0.11f, 0.16f, 0.9f); pt.strokeColor = new Color(0.55f, 0.65f, 0.8f); pt.lineWidth = 2f;
+            foreach (var r in new[] { Rect.MinMaxRect(-HabitatInterior.End, -HabitatInterior.HW, HabitatInterior.End, HabitatInterior.HW), Rect.MinMaxRect(-HabitatInterior.HW, -HabitatInterior.End, HabitatInterior.HW, HabitatInterior.End),
+                                      Rect.MinMaxRect(-HabitatInterior.Hub, -HabitatInterior.Hub, HabitatInterior.Hub, HabitatInterior.Hub) })
+            {
+                float x0 = (r.xMin + HabitatInterior.W / 2f) * RoomPx, x1 = (r.xMax + HabitatInterior.W / 2f) * RoomPx;
+                float y0 = (HabitatInterior.D / 2f - r.yMax) * RoomPx, y1 = (HabitatInterior.D / 2f - r.yMin) * RoomPx;
+                pt.BeginPath(); pt.MoveTo(new Vector2(x0, y0)); pt.LineTo(new Vector2(x1, y0)); pt.LineTo(new Vector2(x1, y1)); pt.LineTo(new Vector2(x0, y1)); pt.ClosePath();
+                pt.Fill(); pt.Stroke();
+            }
             // faint 1 m grid
             pt.lineWidth = 1f; pt.strokeColor = new Color(1f, 1f, 1f, 0.05f);
             for (float x = 1f; x < HabitatInterior.W; x += 1f) { pt.BeginPath(); pt.MoveTo(new Vector2(x * RoomPx, 0)); pt.LineTo(new Vector2(x * RoomPx, HabitatInterior.D * RoomPx)); pt.Stroke(); }

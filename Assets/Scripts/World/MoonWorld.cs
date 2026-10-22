@@ -17,7 +17,7 @@ namespace Mohakash
         public Vector3 RoverStart { get; private set; }
         public Vector3 SeisCratePoint { get; private set; }
         public Transform SunDisk, SunCorona, Earth, Stars;
-        public HingedHatch OuterHatch { get; private set; }
+        public CapsuleHatch OuterHatch { get; private set; }
         /// <summary>Where the astronaut stands to press the hatch button (outside, beside the doorway).</summary>
         public Vector3 HatchPanelPoint { get; private set; }
         /// <summary>Standing spot inside the airlock recess, and just outside the outer hatch.</summary>
@@ -629,38 +629,39 @@ namespace Mohakash
             var root = new GameObject("Outpost").transform;
             root.SetParent(transform);
 
-            // glTFast mirrors X on import: rotating 180 puts the berthing adapter back on +X (toward the SUI tunnel) and the windows on +X, z = +3.5
-            Hab = Spawn("SurfaceHabitat", OnGround(0, 0), Quaternion.Euler(0, 180, 0), 1f, root, "HAB - Surface Habitat Module").transform;   // NASA Artemis-style surface habitat (tools/structures_v2/surface_hab.py)
-            AddBoxCollider(Hab.gameObject, 0.8f);
+            // Cross-shaped surface habitat with a docked airlock capsule (tools/habitat_v3). Real metres, origin on the ground.
+            // glTFast mirrors X on import; with the 180 spawn a GLB point (x, y, z) lands at world offset (x, y, -z), so the
+            // capsule (GLB +X) faces +X like the old SUI tunnel and every number below is read straight from anchors.json.
+            var hab0 = OnGround(0, 0);
+            Hab = Spawn("SurfaceHabitat", hab0, Quaternion.Euler(0, 180, 0), 1f, root, "HAB - Surface Habitat Module").transform;
+            // walls: one box per arm (down to the ground, so nobody walks under the legs) and one for the capsule
+            foreach (var (c, sz) in new[] { (new Vector3(-0.45f, 3f, 0f), new Vector3(21.7f, 6f, 4.8f)), (new Vector3(0f, 3f, 0f), new Vector3(4.8f, 6f, 22.4f)),
+                                            (new Vector3(12.4f, 2.56f, 0f), new Vector3(4.0f, 5.12f, 3.9f)) })
+            {
+                var w = new GameObject("HAB wall").AddComponent<BoxCollider>();
+                w.transform.SetParent(Hab, true); w.transform.position = hab0 + c; w.size = sz;
+            }
 
-            // identity rotation: with glTFast's X mirror the doorway (GLB x = -0.68) faces outward at world x 6.28 and the HAB end
-            // (GLB x = 2.68) docks into the berthing adapter at x 2.92. Raised 0.45 m: chamber floor 0.57 m above the regolith, stair up to it.
-            var airlock = Spawn("Connector", OnGround(5.6f, 0), Quaternion.identity, 1f, root, "SUI - Suit Station / airlock");
-            if (airlock) airlock.transform.position += Vector3.down * 0.65f;
-            AirlockPoint = OnGround(8.6f, 0);
-            // outer hatch at the end of the airlock tunnel (opens / closes smoothly when going in or out)
-            // Connector.glb (rotated 180, lowered 1.1): open doorway at local x -0.68, y 1.22..3.10, recess floor at local y 1.22
-            float conY = airlock ? airlock.transform.position.y : OnGround(5.6f, 0).y - 1.1f;
-            // walk-in airlock chamber inside the tunnel (outer doorway world x 6.28, inner door x 3.15, floor conY + 1.22)
-            Chamber = AirlockChamber.Create(root, new Vector3(4.72f, conY + 1.22f, 0f), Vector3.right);
-            AirlockInside = new Vector3(4.65f, conY + 1.22f, 0f);
-            AirlockInnerPoint = new Vector3(3.35f, conY + 1.22f, 0f);
-            AirlockFront = OnGround(7.9f, 0f);
-            AirlockStairFoot = OnGround(7.35f, 0f);
-            AirlockThreshold = new Vector3(6.1f, conY + 1.22f, 0f);
-            // hinged outer hatch over the doorway (hinge on the +Z side, swings outward), button panel on the -Z side
-            OuterHatch = HingedHatch.Create(root, "Airlock outer hatch", new Vector3(6.36f, conY + 2.16f, 0f), Vector3.right, Vector3.forward, 1.25f, 1.92f,
-                                            new Vector3(0.88f, 0.22f, -0.02f));
-            HatchPanelPoint = new Vector3(6.95f, OnGround(6.95f, -0.55f).y, -0.55f);
+            // walk-in airlock = the capsule: chamber floor 1.74 m, back wall x 10.44, doorway sill (14.62, 2.07),
+            // ladder from the sill down to the landing pad (x 15.0..16.9, top 0.33)
+            AirlockPoint = OnGround(17.2f, 0);
+            Chamber = AirlockChamber.Create(root, hab0 + new Vector3(12.35f, 1.74f, 0f), Vector3.right, 1.6f, 1.3f, 2.6f);
+            AirlockInside = hab0 + new Vector3(12.7f, 1.74f, 0f);
+            AirlockInnerPoint = hab0 + new Vector3(11.25f, 1.74f, 0f);
+            AirlockFront = OnGround(17.7f, 0f);
+            AirlockStairFoot = hab0 + new Vector3(15.85f, 0.33f, 0f);
+            AirlockThreshold = hab0 + new Vector3(14.5f, 2.07f, 0f);
+            OuterHatch = CapsuleHatch.Attach(Hab, hab0 + new Vector3(14.45f, 4.35f, 0f), hab0 + new Vector3(12.8f, 3.4f, 0f));
+            HatchPanelPoint = hab0 + new Vector3(14.9f, 0.33f, -1.4f);
 
             // outpost hardware modelled on NASA references (tools/structures_v2/nasa_structs.py), real size, origin on the ground
-            if (kit.Has("OGS")) AddBoxCollider(Spawn("OxygenPlant", OnGround(-11f, -1f), Quaternion.Euler(0, 90, 0), 1f, root, "OGS - Oxygen Generation (electrolysis) plant"), 0.9f);
+            if (kit.Has("OGS")) AddBoxCollider(Spawn("OxygenPlant", OnGround(-14f, -6f), Quaternion.Euler(0, 90, 0), 1f, root, "OGS - Oxygen Generation (electrolysis) plant"), 0.9f);
             if (kit.Has("STO"))
             {
                 var sto = Spawn("LogisticsPallet", OnGround(-6f, 11f), Quaternion.Euler(0, 20, 0), 1f, root, "STO - Logistics pallet (storage)");
                 AddBoxCollider(sto, 0.85f);
             }
-            if (kit.Has("COM")) Spawn("CommsTerminal", OnGround(-3f, -8f), Quaternion.Euler(0, EarthAzimuth, 0), 1f, root, "COM - Surface comm terminal (dish on Earth)");
+            if (kit.Has("COM")) Spawn("CommsTerminal", OnGround(-6f, -8f), Quaternion.Euler(0, EarthAzimuth, 0), 1f, root, "COM - Surface comm terminal (dish on Earth)");
             if (kit.Has("RAD")) Spawn("RadiationStation", OnGround(6f, -8f), Quaternion.identity, 1f, root, "RAD - Radiation monitor station");
 
             if (kit.Has("GAR"))

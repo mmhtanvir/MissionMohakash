@@ -127,7 +127,13 @@ namespace Mohakash
                 yield return Shot("11_sample_site");
                 m.TestTeleport(m.World.AirlockPoint + new Vector3(1.5f, 0, 0)); yield return Wait(0.5f);
                 yield return Tap(Key.E); yield return Wait(0.5f);
-                for (float w = 0f; m.InCinematic && w < 40f; w += Time.unscaledDeltaTime) yield return null;   // hatch, airlock, suit off
+                // hatch + ladder, climb, chamber cycle, inner door, suit off: a frame every 3 s
+                int frame = 0;
+                for (float w = 0f, next = 0f; m.InCinematic && w < 60f; w += Time.unscaledDeltaTime)
+                {
+                    if (w >= next && frame < 16) { yield return Shot($"11e_airlock_{frame++:00}"); next += 3f; }
+                    yield return null;
+                }
                 yield return Wait(0.5f);
                 yield return Shot("12_inside_habitat");
                 yield return Tap(Key.Tab); yield return Wait(0.6f);
