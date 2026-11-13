@@ -213,11 +213,18 @@ The dust storm in Level 6 is grounded in real measurements:
 ## Design and AI tools
 
 - Design (Figma): https://www.figma.com/design/Ylv8cr01wxyFhV6LQoHukZ/practices?node-id=314-2
-- AI tools used: ChatGPT, Claude, Antigravity, **Tripo3D**
+
+| AI tool | How we used it |
+|---|---|
+| **Claude** ([claude.ai](https://claude.ai/)) | Core development — writing and refactoring game code, simulation logic, UI, and build scripts |
+| **Kiro** ([kiro.dev](https://kiro.dev/)) | Core development — agentic coding sessions: spec-driven feature implementation, code review, and iterative debugging directly in the codebase |
+| **Antigravity** | Core development — additional code generation and debugging support |
+| **ChatGPT** ([chatgpt.com](https://chatgpt.com/)) | Suggestions and ideas — game design brainstorming, level narrative, tutorial wording, and mechanics feedback |
+| **Tripo3D** ([tripo3d.ai](https://www.tripo3d.ai/)) | 3D model generation — all in-game assets generated from text prompts and loaded as GLB files |
 
 ### Tripo3D — AI-generated 3D models
 
-All in-game 3D models (astronaut suit, habitat modules, rovers, solar arrays, equipment crates, rocks, and surface hardware) were generated using [Tripo3D](https://www.tripo3d.ai/), an AI text-to-3D model service. The workflow was:
+All in-game 3D models (astronaut suit, habitat modules, rovers, solar arrays, equipment crates, rocks, and surface hardware) were generated using [Tripo3D](https://www.tripo3d.ai/). The workflow was:
 
 1. Write a short text prompt describing the object (e.g. *"NASA lunar habitat module, white cylindrical pressurised shell, airlock on one end, solar-panel mast, realistic sci-fi"*).
 2. Tripo3D generates a GLB/glTF mesh with UV-mapped textures.
