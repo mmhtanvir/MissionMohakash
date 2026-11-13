@@ -61,6 +61,8 @@ namespace Mohakash
         // ---- State ----
         public float Hour;
         public float Sun = 1f, Dust;
+        /// <summary>Per-panel dust buildup (0–0.5). Sized to SolarPeak count on Init; each panel is cleaned individually.</summary>
+        public float[] PanelDust = new float[0];
         public float Supply, Demand;
         public float Battery, BatteryCap, MaxDischarge;
         bool batteryLockout;
@@ -128,6 +130,8 @@ namespace Mohakash
             Food = 125f * DurationH;   // 104 g/h burn plus a margin
             CartridgeKg = kit.Has("SCR") ? 3f * kit.Count("CART") : 0f;
             Spares = kit.Count("SPARE");
+            int panelCount = kit.Count("SOL-S");
+            PanelDust = panelCount > 0 ? new float[panelCount] : new float[0];
             RoverCap = kit.Has("ROV-SC") ? 6f : 0f;
             RoverBattery = RoverCap;
             SampleCapacity = kit.Has("SAMP") && kit.Has("STO") ? 5 : 0;
@@ -303,7 +307,22 @@ namespace Mohakash
             return true;
         }
 
-        public void CleanArrays() { Dust = 0f; Log(Severity.Good, "Solar arrays cleaned of dust."); }
+        public void CleanArrays() { Dust = 0f; for (int i = 0; i < PanelDust.Length; i++) PanelDust[i] = 0f; Log(Severity.Good, "Solar arrays cleaned of dust."); }
+        /// <summary>Clean a single solar panel by index. Returns false if already clean.</summary>
+        public bool CleanPanel(int index)
+        {
+            if (index < 0 || index >= PanelDust.Length) return false;
+            if (PanelDust[index] < 0.02f) return false;
+            PanelDust[index] = 0f;
+            // Recompute global Dust so Supply updates immediately.
+            float total = 0f;
+            for (int i = 0; i < PanelDust.Length; i++) total += PanelDust[i];
+            Dust = PanelDust.Length > 0 ? total / PanelDust.Length : 0f;
+            int cleaned = 0;
+            for (int i = 0; i < PanelDust.Length; i++) if (PanelDust[i] < 0.02f) cleaned++;
+            Log(Severity.Good, $"Panel {index + 1} cleaned. {cleaned}/{PanelDust.Length} panels clear.");
+            return true;
+        }
 
         // ---- Galley and wash corner: the food / water stores finally have a player-facing use ----
         public const float MealGapH = 6f, WashGapH = 12f;
@@ -390,7 +409,22 @@ namespace Mohakash
 
             // --- Power (GDD §14) ---
             Sun = SunAt(Hour);
-            Dust = Mathf.Min(0.5f, Dust + (Lvl.InStorm(Hour) ? 0.03f : 0.02f / 24f) * dt);   // storm: ~3%/h   // ~2% per mission day (GDD §14: 1-3%/day)
+            // Per-panel dust: storm builds up fast (~3%/h), calm builds slowly (~2%/day). Global Dust = average.
+            float dustRate = (Lvl.InStorm(Hour) ? 0.03f : 0.02f / 24f) * dt;
+            if (PanelDust.Length > 0)
+            {
+                float total = 0f;
+                for (int i = 0; i < PanelDust.Length; i++)
+                {
+                    PanelDust[i] = Mathf.Min(0.5f, PanelDust[i] + dustRate);
+                    total += PanelDust[i];
+                }
+                Dust = total / PanelDust.Length;
+            }
+            else
+            {
+                Dust = Mathf.Min(0.5f, Dust + dustRate);
+            }
             Supply = SolarPeak * Sun * (1f - Dust);
 
             foreach (var l in Loads)

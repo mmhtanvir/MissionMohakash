@@ -726,7 +726,7 @@ namespace Mohakash
             {
                 var sp = lv.SolarStart + i * lv.SolarStep;
                 var a = Spawn("SolarArrayVSAT", OnGround(sp.x, sp.y), Quaternion.identity, 1f, root, $"SOL-S Vertical Solar Array {i + 1}");
-                if (a) { SolarArrays.Add(a.transform); AddBoxCollider(a); var st = a.AddComponent<SunTracker>(); st.Sun = Sun; }
+                if (a) { SolarArrays.Add(a.transform); AddBoxCollider(a); var st = a.AddComponent<SunTracker>(); st.Sun = Sun; SolarPanelDust.Attach(a.transform); }
             }
             for (int i = 0; i < kit.Count("BAT"); i++)
                 AddBoxCollider(Spawn("LunarBattery", Pw(-13f - i * 2.2f, -12f), Quaternion.identity, 1f, root, "BAT - Battery module"));

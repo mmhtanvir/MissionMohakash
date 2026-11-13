@@ -18,6 +18,7 @@ namespace Mohakash
         public Phase Current { get; private set; } = Phase.Briefing;
         public MissionModel Model { get; private set; }
         public MoonWorld World { get; private set; }
+        DustStorm Storm;
         public Astronaut Player { get; private set; }
         public Rover Rover { get; private set; }
         public Rover Remote { get; private set; }   // RC-1 remote explorer, driven from inside the habitat (V)
@@ -323,12 +324,16 @@ namespace Mohakash
                 SampleSites.Add(site);
             }
 
-            foreach (var a in World.SolarArrays)
+            for (int i = 0; i < World.SolarArrays.Count; i++)
             {
+                var a = World.SolarArrays[i];
+                int idx = i;   // capture for closures
                 var clean = Interactable.Create(null, a.position, 3.2f, parent);
-                clean.Available = () => Model.Dust > 0.02f;
-                clean.Prompt = () => $"Clean dust off the solar arrays ({Model.Dust:0%} dust)";
-                clean.Use = () => Model.CleanArrays();
+                clean.Available = () => idx < Model.PanelDust.Length && Model.PanelDust[idx] > 0.02f;
+                clean.Prompt = () => idx < Model.PanelDust.Length
+                    ? $"Clean panel {idx + 1} ({Model.PanelDust[idx]:0%} dust)"
+                    : $"Clean dust off solar panel {idx + 1}";
+                clean.Use = () => { if (!Model.CleanPanel(idx)) Ui.Toast("Panel is already clean.", Severity.Info); };
             }
 
             var lander = Interactable.Create(null, World.OnGround(Levels.Current.Lander.x, Levels.Current.Lander.y), 7f, parent);
@@ -877,8 +882,19 @@ namespace Mohakash
             // CommsNetwork
             Model.Net.Update(Time.unscaledDeltaTime);
 
-            World.SetSunNatural(LunarClock.ElevationDeg(Model.Hour), LunarClock.AzimuthDeg(Model.Hour), Model.Sun);
+            // Model.Sun is quartered in a dust storm (power); the look comes from DustStorm, not from dimming the sun away
+            var lv = Levels.Current;
+            bool storm = lv.InStorm(Model.Hour);
+            World.SetSunNatural(LunarClock.ElevationDeg(Model.Hour), LunarClock.AzimuthDeg(Model.Hour), storm ? Mathf.Min(1f, Model.Sun * 4f) : Model.Sun);
+            if (lv.StormStart >= 0f)
+            {
+                if (Storm == null) Storm = DustStorm.Create(World.transform);
+                float k = Mathf.SmoothStep(0f, 1f, Mathf.Min(Mathf.InverseLerp(lv.StormStart, lv.StormStart + 1.5f, Model.Hour),
+                                                             Mathf.InverseLerp(lv.StormEnd, lv.StormEnd - 1.5f, Model.Hour)));
+                Storm.Tick(k, Model.Inside, World.Sun);
+            }
             UpdateRings();
+            UpdatePanelDustOverlays();
             Minimap?.Tick();
             FullMap?.Tick();
 
@@ -967,6 +983,16 @@ namespace Mohakash
             if (ringTimer > 0) return;
             ringTimer = 0.4f;
             World.SetRing(walkRing, World.AirlockPoint, Mathf.Max(2f, WalkBackRadius));
+        }
+
+        void UpdatePanelDustOverlays()
+        {
+            if (World == null || Model == null || Model.PanelDust.Length == 0) return;
+            for (int i = 0; i < World.SolarArrays.Count && i < Model.PanelDust.Length; i++)
+            {
+                var overlay = World.SolarArrays[i].GetComponent<SolarPanelDust>();
+                if (overlay != null) overlay.SetDust(Model.PanelDust[i]);
+            }
         }
 
         /// <summary>How far you can be and still walk back with the 30-min reserve intact (GDD §18.1).</summary>
