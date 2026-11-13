@@ -219,5 +219,4 @@ The dust storm in Level 6 is grounded in real measurements:
 | **Claude** ([claude.ai](https://claude.ai/)) | Core development — writing and refactoring game code, simulation logic, UI, and build scripts |
 | **Kiro** ([kiro.dev](https://kiro.dev/)) | Core development — agentic coding sessions: spec-driven feature implementation, code review, and iterative debugging directly in the codebase |
 | **Antigravity** | Core development — additional code generation and debugging support |
-| **ChatGPT** ([chatgpt.com](https://chatgpt.com/)) | Suggestions and ideas — game design brainstorming, level narrative, tutorial wording, and mechanics feedback |
 | **Tripo3D** ([tripo3d.ai](https://www.tripo3d.ai/)) | 3D model generation — all in-game assets generated from text prompts and loaded as GLB files |
