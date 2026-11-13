@@ -129,27 +129,97 @@ More detail: `MISSION_MOHAKASH_HANDOFF.md`.
 
 ## NASA data and tools we used
 
-The game connects to these NASA services. They are shown live on the mission briefing screen ("REAL NASA DATA").
-If there is no internet, the game still plays the same; the panel just stays hidden. Code: `Assets/Scripts/Sim/NasaData.cs`.
+The game fetches live data from three NASA services at mission briefing time and shows it in a "REAL NASA DATA" panel. All calls are optional — if there is no internet the game plays the same and the panel stays hidden. All API code is in `Assets/Scripts/Sim/NasaData.cs`.
 
-| NASA source | What the game does with it |
-|---|---|
-| **DONKI: Space Weather Database** ([official page](https://kauai.ccmc.gsfc.nasa.gov/DONKI), API via [api.nasa.gov](https://api.nasa.gov/)) | Asks `https://api.nasa.gov/DONKI/notifications` for the last 30 days of real Sun events (solar flares, CMEs, radiation storms, geomagnetic storms) and shows them as "Real Sun news", next to the game's own solar storm. |
-| **Moon Trek** ([trek.nasa.gov/moon](https://trek.nasa.gov/moon/)) | Downloads the LRO WAC global mosaic tiles (`trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02`) and shows the real map of the Moon for Moon levels. |
-| **Mars Trek** ([trek.nasa.gov/mars](https://trek.nasa.gov/mars/)) | Downloads the Viking MDIM 2.1 colour mosaic tiles (`trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m`) and shows the real map of Mars for Mars levels. |
+---
 
-The API key is NASA's free `DEMO_KEY` (limited to 30 calls an hour). To use your own key, get one at [api.nasa.gov](https://api.nasa.gov/) and change `NasaData.ApiKey`.
+### 1. DONKI — Space Weather Database
+
+**What it is:** NASA's real-time space-weather notification feed ([kauai.ccmc.gsfc.nasa.gov/DONKI](https://kauai.ccmc.gsfc.nasa.gov/DONKI)), served through [api.nasa.gov](https://api.nasa.gov/).
+
+**Exact endpoint called:**
+```
+GET https://api.nasa.gov/DONKI/notifications
+        ?type=all
+        &startDate=<30 days ago>
+        &endDate=<today>
+        &api_key=DEMO_KEY
+```
+
+**How it works in code (`NasaData.SpaceWeather`):**
+1. On the briefing screen, `SpaceWeather(callback)` is called once per run. The result is cached so the network is only hit once.
+2. `UnityWebRequest` fires the GET with a 15-second timeout.
+3. The JSON response is a top-level array of notification objects, each with a `messageType` and `messageIssueTime`. Because Unity's `JsonUtility` requires a wrapper object, the code wraps the array: `JsonUtility.FromJson<Notes>("{\"a\":" + json + "}")`.
+4. `Summarize()` counts each type — `FLR` (solar flares), `CME` (coronal mass ejections), `SEP` (radiation storms), `GST` (geomagnetic storms) — and builds one kid-readable sentence, e.g. *"In the last 30 days NASA saw 3 flashes (solar flares), 2 clouds of hot gas (CMEs). Latest: 9 Nov."*
+5. If the Sun was quiet, it shows *"The real Sun was quiet this month: NASA saw no big storms."*
+6. That sentence appears on the briefing screen next to the in-game solar storm so players can see that space-weather hazards are not invented for the game.
+
+**Connection to the dust storm mechanic:** When DONKI reports real CMEs or radiation storms, the briefing flags the same week's conditions that the Level 6 dust storm simulates — grounding the fiction in real events.
+
+---
+
+### 2. Moon Trek — LRO WAC Global Mosaic
+
+**What it is:** NASA's Moon Trek portal ([trek.nasa.gov/moon](https://trek.nasa.gov/moon/)) serving WMTS (Web Map Tile Service) tiles from the Lunar Reconnaissance Orbiter Wide Angle Camera global mosaic at 303 pixels-per-degree resolution.
+
+**Exact tiles fetched:**
+```
+GET https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02
+        /1.0.0/default/default028mm/0/0/0.jpg   ← western hemisphere
+GET https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02
+        /1.0.0/default/default028mm/0/0/1.jpg   ← eastern hemisphere
+```
+
+**How it works in code (`NasaData.TrekMap`):**
+1. Both tiles are requested in parallel with `UnityWebRequestTexture.GetTexture`.
+2. A counter (`left = 2`) decrements on each completion callback; only when both are done does the stitch run.
+3. A new `Texture2D` is created at `(west.width + east.width) × height`, the two tile pixel arrays are written side-by-side with `SetPixels`, and `Apply()` uploads to the GPU.
+4. The stitched texture is displayed as the world map on the Moon-level briefing screen, so players see the real lunar surface they are about to land on.
+
+---
+
+### 3. Mars Trek — Viking MDIM 2.1 Colour Mosaic
+
+**What it is:** NASA's Mars Trek portal ([trek.nasa.gov/mars](https://trek.nasa.gov/mars/)) serving the Viking MDIM 2.1 global colour mosaic at 232 m/pixel resolution.
+
+**Exact tiles fetched:**
+```
+GET https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m
+        /1.0.0/default/default028mm/0/0/0.jpg   ← western hemisphere
+GET https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m
+        /1.0.0/default/default028mm/0/0/1.jpg   ← eastern hemisphere
+```
+
+**How it works in code:** Identical pipeline to Moon Trek above — parallel fetch, stitch, display. Shown on the Mars-level briefing screen (Level 6, "Dust Storm Survival") so players see the real Martian surface before landing.
+
+---
+
+### API key
+
+All three services use NASA's free `DEMO_KEY` (30 calls/hour per IP, no sign-up needed). To raise the limit, get a personal key at [api.nasa.gov](https://api.nasa.gov/) and set `NasaData.ApiKey` in `Assets/Scripts/Sim/NasaData.cs`.
+
+---
 
 ### How the NASA data drives the dust storm mechanic
 
-The dust storm in Level 6 ("Dust Storm Survival") is informed by real Martian science and NASA DONKI solar-event data:
+The dust storm in Level 6 is grounded in real measurements:
 
-- **DONKI solar events** surface as in-game alerts on the briefing screen. When a real CME or radiation storm appears in the last 30 days of DONKI data, the briefing flags it as "REAL SUN NEWS" so players see that space-weather hazards are not invented for the game.
-- **Mars dust storm physics** are modelled from published NASA data: during a storm, solar irradiance at the Martian surface drops to roughly 25% of its clear-sky value ([NASA MRO/CRISM observations](https://mars.nasa.gov/mro/)) and dust settles on solar panels at ~3% coverage per hour (vs ~2% per day in calm conditions), matching the opacity and settling rates measured by the Mars Exploration Rover program.
-- **Per-panel dust buildup**: each solar array accumulates its own dust layer independently. The orange-brown overlay colour (`#B87539`) matches the iron-oxide dust hue documented in Mars surface spectroscopy. The player must walk up to each panel individually and press **E** to wipe it — mirroring the real maintenance challenge faced by Mars landers (the Spirit and Opportunity rovers relied on wind events to clear their panels; MissionMohakash makes that cleaning an active player task).
-- **Power model**: `Supply = SolarPeak × Sun × (1 − Dust)`. With a full storm (`Sun = 0.25`) and 50% dust buildup, a three-panel outpost delivers only `~37.5%` of its rated power — consistent with the severe power shortfalls recorded during the 2018 global Martian dust storm that ended the Opportunity rover mission.
+- **Solar irradiance:** during a Martian dust storm, surface sunlight drops to ~25% of clear-sky value (matching MRO/CRISM observations). In code: `SunAt(h)` returns `sun * 0.25f` while `InStorm(h)` is true.
+- **Dust accumulation rate:** ~3% panel coverage per hour in a storm vs ~2% per day in calm — matching settling rates measured by the Mars Exploration Rover program. Each panel tracks its own `PanelDust` value independently; the global `Dust = average(PanelDust)`.
+- **Power model:** `Supply = SolarPeak × Sun × (1 − Dust)`. At full storm with 50% dust buildup, a three-panel outpost delivers ~37.5% of rated power — consistent with the power shortfalls recorded during the 2018 global Martian dust storm that ended the Opportunity rover mission.
+- **Per-panel cleaning:** the player must walk to each panel and press **E** individually, mirroring the real challenge Spirit and Opportunity faced (they relied on wind events; MissionMohakash makes it an active task).
+- **Dust colour:** the orange-brown overlay (`#B87539`) matches the iron-oxide dust hue documented in Mars surface spectroscopy.
 
 ## Design and AI tools
 
 - Design (Figma): https://www.figma.com/design/Ylv8cr01wxyFhV6LQoHukZ/practices?node-id=314-2
-- AI tools used: ChatGPT, Claude, Antigravity
+- AI tools used: ChatGPT, Claude, Antigravity, **Tripo3D**
+
+### Tripo3D — AI-generated 3D models
+
+All in-game 3D models (astronaut suit, habitat modules, rovers, solar arrays, equipment crates, rocks, and surface hardware) were generated using [Tripo3D](https://www.tripo3d.ai/), an AI text-to-3D model service. The workflow was:
+
+1. Write a short text prompt describing the object (e.g. *"NASA lunar habitat module, white cylindrical pressurised shell, airlock on one end, solar-panel mast, realistic sci-fi"*).
+2. Tripo3D generates a GLB/glTF mesh with UV-mapped textures.
+3. The downloaded `.glb` files are placed in `Assets/Resources/Models/` and loaded at runtime via the `com.unity.cloud.gltfast` package — no Unity re-import step needed.
+4. Materials are then overridden in code (`SurfaceKit.cs`) to apply procedural normal maps, hull-plating detail, and URP-compatible shaders so everything matches the game's visual style.
