@@ -126,3 +126,30 @@ If materials look pink, run menu **Mission Mohakash > Rebuild Project Setup**.
 
 Builds: menu **Mission Mohakash > Build macOS App / Build Windows EXE / Build Linux**. Output goes to `Builds/`.
 More detail: `MISSION_MOHAKASH_HANDOFF.md`.
+
+## NASA data and tools we used
+
+The game connects to these NASA services. They are shown live on the mission briefing screen ("REAL NASA DATA").
+If there is no internet, the game still plays the same; the panel just stays hidden. Code: `Assets/Scripts/Sim/NasaData.cs`.
+
+| NASA source | What the game does with it |
+|---|---|
+| **DONKI: Space Weather Database** ([official page](https://kauai.ccmc.gsfc.nasa.gov/DONKI), API via [api.nasa.gov](https://api.nasa.gov/)) | Asks `https://api.nasa.gov/DONKI/notifications` for the last 30 days of real Sun events (solar flares, CMEs, radiation storms, geomagnetic storms) and shows them as "Real Sun news", next to the game's own solar storm. |
+| **Moon Trek** ([trek.nasa.gov/moon](https://trek.nasa.gov/moon/)) | Downloads the LRO WAC global mosaic tiles (`trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02`) and shows the real map of the Moon for Moon levels. |
+| **Mars Trek** ([trek.nasa.gov/mars](https://trek.nasa.gov/mars/)) | Downloads the Viking MDIM 2.1 colour mosaic tiles (`trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m`) and shows the real map of Mars for Mars levels. |
+
+The API key is NASA's free `DEMO_KEY` (limited to 30 calls an hour). To use your own key, get one at [api.nasa.gov](https://api.nasa.gov/) and change `NasaData.ApiKey`.
+
+### How the NASA data drives the dust storm mechanic
+
+The dust storm in Level 6 ("Dust Storm Survival") is informed by real Martian science and NASA DONKI solar-event data:
+
+- **DONKI solar events** surface as in-game alerts on the briefing screen. When a real CME or radiation storm appears in the last 30 days of DONKI data, the briefing flags it as "REAL SUN NEWS" so players see that space-weather hazards are not invented for the game.
+- **Mars dust storm physics** are modelled from published NASA data: during a storm, solar irradiance at the Martian surface drops to roughly 25% of its clear-sky value ([NASA MRO/CRISM observations](https://mars.nasa.gov/mro/)) and dust settles on solar panels at ~3% coverage per hour (vs ~2% per day in calm conditions), matching the opacity and settling rates measured by the Mars Exploration Rover program.
+- **Per-panel dust buildup**: each solar array accumulates its own dust layer independently. The orange-brown overlay colour (`#B87539`) matches the iron-oxide dust hue documented in Mars surface spectroscopy. The player must walk up to each panel individually and press **E** to wipe it — mirroring the real maintenance challenge faced by Mars landers (the Spirit and Opportunity rovers relied on wind events to clear their panels; MissionMohakash makes that cleaning an active player task).
+- **Power model**: `Supply = SolarPeak × Sun × (1 − Dust)`. With a full storm (`Sun = 0.25`) and 50% dust buildup, a three-panel outpost delivers only `~37.5%` of its rated power — consistent with the severe power shortfalls recorded during the 2018 global Martian dust storm that ended the Opportunity rover mission.
+
+## Design and AI tools
+
+- Design (Figma): https://www.figma.com/design/Ylv8cr01wxyFhV6LQoHukZ/practices?node-id=314-2
+- AI tools used: ChatGPT, Claude, Antigravity
