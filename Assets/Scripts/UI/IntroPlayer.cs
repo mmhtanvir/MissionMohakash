@@ -59,7 +59,7 @@ namespace Mohakash
                 if (shown >= SkipDelay)
                 {
                     Ui.Show(skip, true);
-                    if (GameInput.Pause || GameInput.Jump || UnityEngine.InputSystem.Keyboard.current?.enterKey.wasPressedThisFrame == true) Leave();
+                    if (GameInput.Pause || GameInput.Jump || GameInput.AnyTap || UnityEngine.InputSystem.Keyboard.current?.enterKey.wasPressedThisFrame == true) Leave();
                 }
                 yield return null;
             }
@@ -70,6 +70,8 @@ namespace Mohakash
             string dir = Path.Combine(Application.streamingAssetsPath, "Intro");
 #if UNITY_WEBGL && !UNITY_EDITOR
             return dir + "/intro.mp4";   // WebGL cannot list files; name the file intro.mp4 for web builds
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            return dir + "/" + Names[0];   // inside the APK (jar:) File.Exists can't see it; VideoPlayer reads the URL fine
 #else
             foreach (var n in Names) { var p = Path.Combine(dir, n); if (File.Exists(p)) return p; }
             if (Directory.Exists(dir)) foreach (var p in Directory.GetFiles(dir, "*.mp4")) return p;

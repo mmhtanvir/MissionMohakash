@@ -62,8 +62,8 @@ namespace Mohakash
 
         void Build()
         {
-            const float SpeS = MissionModel.SpeStart, SpeE = MissionModel.SpeEnd;
-            const float ShS  = MissionModel.ShadowStart, ShE = MissionModel.ShadowEnd;
+            float SpeS = MissionModel.SpeStart, SpeE = MissionModel.SpeEnd;
+            float ShS  = MissionModel.ShadowStart, ShE = MissionModel.ShadowEnd;
             bool hasCom = m.Kit.Has("COM");   // without a comms console every Earth-link step is skipped, never a dead end
 
             // ---- A  Mission readiness checklist ----
@@ -132,45 +132,45 @@ namespace Mohakash
                     : No("Water below 10 or the habitat load has no power."));
             if (hasCom)
             {
-            S(b, Spot.Comms, "Inspect the antenna, cabling, power supply and terminal", (x, c) =>
-                x.Net.Inspected ? Ok("Antenna, cabling, power and terminal inspected.")
-                : No("Open the comms workstation and run diagnostics."));
-            S(b, Spot.Comms, "Verify antenna orientation and an unobstructed line of sight", (x, c) =>
+            S(b, Spot.Comms, "Check the radio", (x, c) =>
+                x.Net.Inspected ? Ok("Radio checked.")
+                : No("Go to the radio desk and press 'Check the radio'."));
+            S(b, Spot.Comms, "Make sure the antenna points at Earth", (x, c) =>
             {
                 var l = x.Net.Link("OUT", "EARTH");
                 return l != null && l.State != LinkState.Unavailable && x.Net.PointingErrDeg < 1.5f && x.Net.CableLossDb < 1f
                     ? Ok(l.Reason)
-                    : No((l?.Reason ?? "No link data.") + " Diagnose it in the workstation.");
+                    : No((l?.Reason ?? "No signal yet.") + " Use the radio desk to fix it.");
             });
-            S(b, Spot.Comms, "Identify the available communication paths", (x, c) =>
-                x.Net.PathsReviewed ? Ok("Paths identified: direct-to-Earth, relay R-1, surface links.")
-                : No("Open 'Available paths' in the workstation."));
-            S(b, Spot.Comms, "Establish a link with Earth mission control", (x, c) =>
-                x.Net.LinkEstablished ? Ok("Link established.")
-                : No("Press 'Establish link' in the workstation."));
-            S(b, Spot.Comms, "Send a telemetry packet and confirm the acknowledgement", (x, c) =>
-                x.Net.PacketAcked ? Ok("Mission Control acknowledged the packet.")
-                : No("Press 'Send test packet'."));
-            S(b, Spot.Comms, "Verify voice, status telemetry and science-data transmission separately", (x, c) =>
+            S(b, Spot.Comms, "Look at the ways to reach Earth", (x, c) =>
+                x.Net.PathsReviewed ? Ok("You found the ways: straight to Earth, through satellite R-1, and short radio on the ground.")
+                : No("Press 'Ways to reach Earth' at the radio desk."));
+            S(b, Spot.Comms, "Connect to Mission Control on Earth", (x, c) =>
+                x.Net.LinkEstablished ? Ok("Connected!")
+                : No("Press 'Connect to Earth' at the radio desk."));
+            S(b, Spot.Comms, "Send a hello message and get an answer", (x, c) =>
+                x.Net.PacketAcked ? Ok("Mission Control said hello back.")
+                : No("Press 'Send a hello message'."));
+            S(b, Spot.Comms, "Test talking, base messages and science data", (x, c) =>
                 x.Net.VoiceOk && x.Net.TlmOk && x.Net.SciOk
-                    ? Ok("Voice, telemetry and science data verified.")
-                    : No($"Still to verify: {(x.Net.VoiceOk ? "" : "voice ")}{(x.Net.TlmOk ? "" : "telemetry ")}{(x.Net.SciOk ? "" : "science-data")}."));
-            S(b, Spot.Comms, "Inspect link quality: SNR, data rate and latency", (x, c) =>
+                    ? Ok("Talking, base messages and science data all work.")
+                    : No($"Still to test: {(x.Net.VoiceOk ? "" : "talking ")}{(x.Net.TlmOk ? "" : "base-messages ")}{(x.Net.SciOk ? "" : "science-data")}."));
+            S(b, Spot.Comms, "See how strong the signal to Earth is", (x, c) =>
             {
                 var l = x.Net.Link("OUT", "EARTH");
                 return x.Net.QualityViewed
-                    ? Ok($"SNR {l?.SnrDb:0.0} dB, {l?.RateMbps:0.###} Mbps, latency {l?.LatencyS:0.0} s.")
-                    : No("Select the Earth node in the workstation to read the link budget.");
+                    ? Ok($"A message takes {l?.LatencyS:0.0} seconds to reach Earth.")
+                    : No("Click Earth on the space map at the radio desk.");
             });
-            S(b, Spot.Comms, "Open the orbital map: relays, stations and windows", (x, c) =>
-                x.Net.MapOpened ? Ok("Orbital map reviewed.")
-                : No("Open the orbital view in the workstation."));
-            S(b, Spot.Comms, "Save the link test results for Mission 2", (x, c) =>
-                x.Net.CommunicationsTestComplete ? Ok("Link map saved for Mission 2.")
-                : No("Press 'Save link results' (needs a verified Earth link and voice)."));
+            S(b, Spot.Comms, "Look at the space map", (x, c) =>
+                x.Net.MapOpened ? Ok("You looked at the space map.")
+                : No("Press 'Space map' at the radio desk."));
+            S(b, Spot.Comms, "Save the radio results", (x, c) =>
+                x.Net.CommunicationsTestComplete ? Ok("Results saved.")
+                : No("Press 'Save the results' (send a hello message and test talking first)."));
             }
-            else S(b, Spot.Auto, "No comms console packed: Earth link tests skipped", (x, c) =>
-                Ok("No comms console in the loadout: there is no Earth link, so the link tests are skipped and science data stays on board."));
+            else S(b, Spot.Auto, "No radio packed: radio tests skipped", (x, c) =>
+                Ok("You didn't pack the radio, so you can't talk to Earth. The radio tests are skipped."));
 
             S(b, Spot.Systems, "Review fault messages before going outside", (x, c) =>
             {
@@ -236,7 +236,7 @@ namespace Mohakash
             S(d, Spot.Seis, "Record the location and deployment time", (x, c) =>
             {
                 x.Data.Add(new DataRecord { Hour = x.Hour, Instrument = "SEIS",
-                    What = "Commissioned: self-test passed",
+                    What = "The quake sensor tested itself: it works!",
                     Where = $"x {x.SeisPos.x:0}, z {x.SeisPos.z:0}",
                     Conditions = $"data quality {x.SeisQuality:0%}" });
                 return Ok("Deployment location and time logged in the science log.");
@@ -248,7 +248,7 @@ namespace Mohakash
                 "Dose rises and hurts the Safety score.",
                 x => true, SpeS - (1f / 6f), SpeE + 1f);
             e.PassExtra = x => x.Dose - doseAtSpe <= 0.4f;
-            e.OnFail = x => { x.NearFailures++; x.Log(Severity.Critical, "Radiation procedure failed: avoidable dose taken during the solar particle event."); };
+            e.OnFail = x => { x.NearFailures++; x.Log(Severity.Critical, "You were not safe during the solar storm and got extra radiation."); };
             S(e, Spot.Auto, "Receive the alert and check status and location", (x, c) =>
                 Ok(x.Inside ? "RAD ALERT: solar particle event. You are inside the habitat."
                             : $"RAD ALERT: solar particle event. You are {Dist(c):0} m out: stop work and return NOW."));
@@ -273,7 +273,7 @@ namespace Mohakash
                 "Non-critical systems shut down and science data is lost.",
                 x => true, ShS - 2f, ShE + 1.5f);
             f.PassExtra = x => !essentialLost;
-            f.OnFail = x => x.Log(Severity.Warning, "Power contingency failed: essential loads dropped during the shadow window.");
+            f.OnFail = x => x.Log(Severity.Warning, "The power ran out while it was dark, and important machines turned off.");
             S(f, Spot.Systems, "Notice falling solar output and compare battery with the load", (x, c) =>
                 Ok($"Shadow in {Mathf.Max(0f, ShS - x.Hour):0.0} h. Battery {x.Battery:0.0} PWh, load {x.Demand:0.0} PW."), true);
             S(f, Spot.Systems, "Switch off optional equipment so the battery lasts", (x, c) =>

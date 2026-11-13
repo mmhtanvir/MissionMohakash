@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission Mohakash Plan Your 72 Hours</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&amp;family=Rajdhani:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#03060c}
+.hud-line{fill:none;stroke:#4ea6ff;stroke-opacity:.45;stroke-width:1.5}
+.hud-bright{fill:none;stroke:#4ea6ff;stroke-width:3.5;stroke-linecap:square}
+.hud-tick{fill:none;stroke:#4ea6ff;stroke-opacity:.35;stroke-width:1.5}
+.pnl{position:absolute;box-sizing:border-box;background:rgba(6,16,34,.84);border:1px solid rgba(110,175,255,.38);border-radius:4px}
+.pnl::before{content:"";position:absolute;left:-1px;top:-1px;width:18px;height:18px;border-left:2px solid #4ea6ff;border-top:2px solid #4ea6ff;border-top-left-radius:4px}
+.pnl::after{content:"";position:absolute;right:-1px;bottom:-1px;width:18px;height:18px;border-right:2px solid #4ea6ff;border-bottom:2px solid #4ea6ff;border-bottom-right-radius:4px}
+.hdr{margin:0;font-weight:700;font-size:16px;letter-spacing:.16em;color:#8fc4ff;text-transform:uppercase;line-height:20px}
+.col{font-weight:700;font-size:14px;letter-spacing:.14em;color:#7f9cc4}
+.row{display:grid;grid-template-columns:96px 620px minmax(0,1fr);column-gap:18px;align-items:center;height:48px}
+.hrs{font-weight:700;font-size:20px;color:#d6e4f5}
+.selw{position:relative;height:46px}
+.sel{all:unset;box-sizing:border-box;width:100%;height:46px;padding:0 120px 0 42px;font-family:'Rajdhani',sans-serif;font-weight:600;font-size:19px;color:#ffffff;background:rgba(20,46,84,.72);border:1.5px solid rgba(110,175,255,.38);border-radius:3px;cursor:pointer;transition:border-color .2s,background .2s}
+.sel:hover{border-color:#8fc4ff;background:rgba(28,60,106,.85)}
+.sel:focus-visible{outline:2px solid #ffffff;outline-offset:2px}
+.sel option{background:#0b1a33;color:#ffffff}
+.row.warn .sel{border-color:#ff6b6b;background:rgba(90,16,28,.6)}
+.tdot{position:absolute;left:16px;top:17px;width:12px;height:12px;border-radius:3px;pointer-events:none}
+.ttag{position:absolute;right:42px;top:12px;font-weight:700;font-size:13px;letter-spacing:.12em;pointer-events:none}
+.chev{position:absolute;right:14px;top:13px;pointer-events:none;color:#ffb066}
+.evc{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;box-sizing:border-box;border:1px solid;border-radius:16px;font-weight:700;font-size:16px;white-space:nowrap}
+.evc i{width:8px;height:8px;border-radius:50%;background:currentColor}
+.tile{padding:14px;border-radius:3px;background:rgba(10,26,52,.7);border:1px solid rgba(110,175,255,.22)}
+.tl{font-weight:700;font-size:13px;letter-spacing:.12em;color:#8fb0d6}
+.tv{margin-top:4px;font-weight:700;font-size:34px;line-height:36px;color:#ffffff}
+.tv small{font-size:18px;color:#a9bfdc}
+.ts{margin-top:2px;font-weight:600;font-size:15px;color:#9fb6d3}
+.lg{display:flex;align-items:center;gap:8px;font-weight:600;font-size:16px;color:#c9d8ea}
+.lg i{width:12px;height:12px;border-radius:3px}
+.btn3{all:unset;box-sizing:border-box;height:56px;padding:0 22px;display:flex;align-items:center;gap:10px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:19px;letter-spacing:.06em;color:#a9d0ff;cursor:pointer;border:1.5px solid rgba(110,175,255,.35);border-radius:3px}
+.btn3:hover{color:#ffffff;border-color:#8fc4ff;background:rgba(78,166,255,.12)}
+.btn2{all:unset;box-sizing:border-box;height:56px;padding:0 30px;display:flex;align-items:center;justify-content:center;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:21px;letter-spacing:.08em;color:#e8f1ff;background:rgba(20,46,84,.85);border:1.5px solid rgba(110,175,255,.6);border-radius:3px;cursor:pointer;text-decoration:none}
+.btn2:hover{border-color:#a6d6ff;color:#ffffff}
+.cta{all:unset;box-sizing:border-box;position:relative;width:320px;height:56px;display:flex;align-items:center;justify-content:center;gap:12px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:23px;letter-spacing:.08em;color:#ffffff;cursor:pointer;filter:drop-shadow(0 0 12px rgba(255,128,28,.55));transition:filter .25s,transform .2s}
+.cta svg.bg{position:absolute;left:0;top:0}
+.cta span,.cta svg.ic2{position:relative}
+.cta:hover{filter:drop-shadow(0 0 20px rgba(255,128,28,.9));transform:translateY(-2px)}
+.btn2:focus-visible,.btn3:focus-visible,.cta:focus-visible{outline:2px solid #ffffff;outline-offset:3px}
+@media (prefers-reduced-motion:reduce){.cta,.sel{transition:none}.cta:hover{transform:none}}
+</style>
+</helmet>
+<div style="position: relative; width: 1920px; height: 1080px; overflow: hidden; background: radial-gradient(ellipse 80% 70% at 50% 60%, #1a2230 0%, #0a0f18 58%, #03060c 100%); font-family: 'Rajdhani', sans-serif; color: #e8f1ff">
+
+  <svg aria-hidden="true" width="1920" height="1080" viewBox="0 0 1920 1080" style="position: absolute; inset: 0; pointer-events: none">
+    <path class="hud-line" d="M60 24 H1860 L1896 60 V300 L1882 314 V760 L1896 774 V1020 L1860 1056 H60 L24 1020 V774 L38 760 V314 L24 300 V60 Z"></path>
+    <path class="hud-bright" d="M24 118 V60 L60 24 H150"></path>
+    <path class="hud-bright" d="M1770 24 H1860 L1896 60 V118"></path>
+    <path class="hud-bright" d="M24 962 V1020 L60 1056 H110"></path>
+    <path class="hud-bright" d="M1810 1056 H1860 L1896 1020 V962"></path>
+    <path class="hud-tick" d="M48 340h8M48 364h8M48 388h8M48 412h8M48 436h8M48 460h8M48 484h12M48 508h8M48 532h8M48 556h8M48 580h8M48 604h8M48 628h8M48 652h8M48 676h8M48 700h8M48 724h8"></path>
+    <path class="hud-tick" d="M1864 340h8M1864 364h8M1864 388h8M1864 412h8M1864 436h8M1864 460h8M1860 484h12M1864 508h8M1864 532h8M1864 556h8M1864 580h8M1864 604h8M1864 628h8M1864 652h8M1864 676h8M1864 700h8M1864 724h8"></path>
+  </svg>
+
+  <div style="position: absolute; left: 520px; top: 34px; width: 880px; height: 100px">
+    <svg aria-hidden="true" width="880" height="100" viewBox="0 0 880 100" style="position: absolute; left: 0; top: 0"><path d="M16.75 .75H863.25L879.25 16.75V83.25L863.25 99.25H16.75L.75 83.25V16.75Z" fill="rgba(6,18,38,.88)" stroke="#4ea6ff" stroke-opacity=".7" stroke-width="1.5"></path></svg>
+    <h1 style="position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 48px; letter-spacing: .04em; color: #e6f2ff; text-shadow: 0 0 18px rgba(60,150,255,.75)">PLAN YOUR 72 HOURS</h1>
+  </div>
+
+  <div style="position: absolute; left: 96px; top: 48px">
+    <div style="font-weight: 600; font-size: 16px; letter-spacing: .12em; color: #9fb3cc">MISSION 01</div>
+    <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px">
+      <span style="font-weight: 700; font-size: 30px; line-height: 32px; color: #ffffff">FIRST LIGHT</span>
+      <span style="font-weight: 600; font-size: 20px; color: #6fb4ff">[ MOON ]</span>
+    </div>
+  </div>
+
+  <section class="pnl" aria-label="Your schedule" style="left: 96px; top: 160px; width: 1180px; height: 800px; padding: 22px 28px">
+    <p style="margin: 0; font-weight: 600; font-size: 19px; line-height: 24px; color: #c9d8ea">Choose what you'll do in each 6-hour block. Don't forget to sleep! Your plan becomes your on-screen checklist during the mission.</p>
+    <div class="row" style="height: 22px; margin-top: 20px">
+      <span class="col">HOURS</span><span class="col">WHAT I WILL DO</span><span class="col">WHAT HAPPENS ON THE MOON</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+        <div class="row {{r.cls}}">
+          <span class="hrs">{{r.hours}}</span>
+          <div class="selw">
+            <select class="sel" aria-label="{{r.aria}}" value="{{r.value}}" onChange="{{r.change}}">
+              <option value="setup">Set up the habitat (Tasks A + B)</option>
+              <option value="seis">Spacewalk: place the seismometer (C + D)</option>
+              <option value="rad">Spacewalk: log a radiation reading</option>
+              <option value="rocks">Spacewalk: collect rock samples</option>
+              <option value="shelter">Shelter from the solar storm (Task E)</option>
+              <option value="save">Save power through the shadow (Task F)</option>
+              <option value="eat">Eat, wash and check systems</option>
+              <option value="close">Close out and send the report (Task G)</option>
+              <option value="sleep">Sleep at the bunk</option>
+            </select>
+            <span class="tdot" style="background: {{r.color}}"></span>
+            <span class="ttag" style="color: {{r.color}}">{{r.tag}}</span>
+            <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+          </div>
+          <div>
+            <sc-if value="{{r.hasEvent}}" hint-placeholder-val="{{ false }}">
+              <span class="evc" style="color: {{r.evColor}}; background: {{r.evBg}}; border-color: {{r.evBorder}}"><i></i>{{r.event}}</span>
+            </sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section class="pnl" aria-label="Plan summary" style="left: 1300px; top: 160px; width: 524px; height: 800px; padding: 22px 24px; display: flex; flex-direction: column">
+    <h2 class="hdr">Plan summary</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px">
+      <div class="tile"><div class="tl" style="color: #a9b9ff">SLEEP</div><div class="tv">{{sleepH}}<small> h</small></div><div class="ts">goal 24 h</div></div>
+      <div class="tile"><div class="tl" style="color: #ffb066">SPACEWALKS</div><div class="tv">{{eva}}</div><div class="ts">{{evaH}} h outside</div></div>
+      <div class="tile"><div class="tl" style="color: #35e3c9">WORK</div><div class="tv">{{workH}}<small> h</small></div><div class="ts">habitat tasks</div></div>
+    </div>
+
+    <div role="status" style="display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding: 14px 16px; border-radius: 3px; border: 1px solid {{st.border}}; background: {{st.bg}}">
+      <sc-if value="{{st.ok}}" hint-placeholder-val="{{ true }}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#35e3c9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="m8 12 3 3 5-6"></path></svg>
+      </sc-if>
+      <sc-if value="{{st.warn}}" hint-placeholder-val="{{ false }}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffb547" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+      </sc-if>
+      <div style="font-weight: 700; font-size: 18px; line-height: 23px; color: {{st.color}}">{{st.text}}</div>
+    </div>
+
+    <h2 class="hdr" style="margin-top: 26px">72-hour timeline</h2>
+    <div style="margin-top: 14px; font-weight: 700; font-size: 13px; letter-spacing: .12em; color: #8fb0d6">YOUR PLAN</div>
+    <div style="display: flex; gap: 2px; height: 22px; margin-top: 6px">
+      <sc-for list="{{segs}}" as="s" hint-placeholder-count="12">
+        <span style="flex: 1; border-radius: 2px; background: {{s.color}}"></span>
+      </sc-for>
+    </div>
+    <div style="margin-top: 14px; font-weight: 700; font-size: 13px; letter-spacing: .12em; color: #8fb0d6">ON THE MOON</div>
+    <div style="position: relative; height: 22px; margin-top: 6px; border-radius: 2px; background: rgba(255,211,107,.22)">
+      <span style="position: absolute; left: 30.56%; width: 4.17%; top: 0; bottom: 0; background: #ffb547; border-radius: 2px"></span>
+      <span style="position: absolute; left: 55.56%; width: 8.33%; top: 0; bottom: 0; background: #2a2f5c; border: 1px solid #a5b4fc; box-sizing: border-box; border-radius: 2px"></span>
+      <span style="position: absolute; left: 72.22%; width: 3px; top: -4px; bottom: -4px; background: #ff8b8b"></span>
+      <span style="position: absolute; right: 0; width: 6px; top: -4px; bottom: -4px; background: #35e3c9; border-radius: 2px"></span>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-top: 6px; font-weight: 600; font-size: 14px; color: #8fa4c0"><span>h0</span><span>h24</span><span>h48</span><span>h72</span></div>
+
+    <div style="margin-top: auto; padding-top: 16px; border-top: 1px solid rgba(110,175,255,.22); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px">
+      <span class="lg"><i style="background: #8fa8ff"></i>Sleep</span>
+      <span class="lg"><i style="background: #ffb547"></i>Solar storm</span>
+      <span class="lg"><i style="background: #ff8a2a"></i>Spacewalk (EVA)</span>
+      <span class="lg"><i style="background: #2a2f5c; border: 1px solid #a5b4fc"></i>Shadow, no sun</span>
+      <span class="lg"><i style="background: #35e3c9"></i>Work in habitat</span>
+      <span class="lg"><i style="background: #ff8b8b; width: 3px"></i>Moonquake · <i style="background: #35e3c9; width: 6px"></i>Ride home</span>
+    </div>
+  </section>
+
+  <div style="position: absolute; left: 96px; top: 980px; width: 1728px; display: flex; align-items: center; gap: 14px">
+    <button class="btn3" type="button" onClick="{{suggest}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>USE SUGGESTED PLAN</button>
+    <div style="flex: 1"></div>
+    <a class="btn2" href="Loadout.dc.html">BACK TO LOADOUT</a>
+    <button class="cta" type="button">
+      <svg class="bg" aria-hidden="true" width="320" height="56" viewBox="0 0 320 56"><defs><linearGradient id="phCta" x1="0" x2="1"><stop offset="0" stop-color="#d45f0d"></stop><stop offset="1" stop-color="#a3430a"></stop></linearGradient></defs><path d="M.75 .75H319.25V42L305 55.25H.75Z" fill="url(#phCta)" stroke="#ffb066" stroke-width="1.5"></path></svg>
+      <svg class="ic2" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path></svg>
+      <span>START MISSION</span>
+    </button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var self = this;
+    var SUG = ['setup', 'seis', 'rad', 'shelter', 'sleep', 'rocks', 'save', 'sleep', 'eat', 'sleep', 'close', 'sleep'];
+    var HOURS = ['h0–6', 'h6–12', 'h12–18', 'h18–24', 'h24–30', 'h30–36', 'h36–42', 'h42–48', 'h48–54', 'h54–60', 'h60–66', 'h66–72'];
+    var TYPE_OF = { setup: 'work', seis: 'eva', rad: 'eva', rocks: 'eva', shelter: 'work', save: 'work', eat: 'work', close: 'work', sleep: 'sleep' };
+    var TYPE = { sleep: { c: '#8fa8ff', t: 'SLEEP' }, eva: { c: '#ff8a2a', t: 'EVA' }, work: { c: '#35e3c9', t: 'WORK' } };
+    var STORM = { t: 'Solar storm h22–25', c: '#ffb547', bg: 'rgba(255,181,71,.12)', b: 'rgba(255,181,71,.5)' };
+    var SHADOW = { t: 'Shadow, no sun h40–46', c: '#c7d0ff', bg: 'rgba(165,180,252,.12)', b: 'rgba(165,180,252,.45)' };
+    var EV = [null, null, null, STORM, STORM, null, SHADOW, SHADOW,
+      { t: 'Moonquake ~h52', c: '#ff9d9d', bg: 'rgba(255,107,107,.12)', b: 'rgba(255,107,107,.45)' }, null, null,
+      { t: 'Ride home h72', c: '#35e3c9', bg: 'rgba(53,227,201,.12)', b: 'rgba(53,227,201,.45)' }];
+    var plan = (this.state && this.state.plan) || SUG;
+    var stormEva = false;
+    var rows = plan.map(function (v, i) {
+      var ty = TYPE[TYPE_OF[v]];
+      var conflict = (i === 3 || i === 4) && TYPE_OF[v] === 'eva';
+      if (conflict) stormEva = true;
+      var ev = EV[i];
+      return {
+        hours: HOURS[i], value: v, color: ty.c, tag: ty.t,
+        cls: conflict ? 'warn' : '',
+        aria: 'Activity for ' + HOURS[i],
+        change: function (e) { var next = plan.slice(); next[i] = e.target.value; self.setState({ plan: next }); },
+        hasEvent: !!ev, event: ev ? ev.t : '', evColor: ev ? ev.c : '', evBg: ev ? ev.bg : '', evBorder: ev ? ev.b : ''
+      };
+    });
+    var count = function (t) { return plan.filter(function (v) { return TYPE_OF[v] === t; }).length; };
+    var sleepH = count('sleep') * 6, eva = count('eva'), workH = count('work') * 6;
+    var msg = null;
+    if (plan.indexOf('seis') < 0) msg = 'Add a spacewalk to place the seismometer. It is the main objective.';
+    else if (stormEva) msg = 'Don’t spacewalk during the solar storm (h22–25). Shelter inside instead.';
+    else if (sleepH < 24) msg = 'Plan at least 24 h of sleep. You have ' + sleepH + ' h.';
+    var ok = !msg;
+    return {
+      rows: rows,
+      segs: plan.map(function (v) { return { color: TYPE[TYPE_OF[v]].c }; }),
+      sleepH: sleepH, eva: eva, evaH: eva * 6, workH: workH,
+      st: {
+        ok: ok, warn: !ok,
+        text: ok ? 'Plan looks good.' : msg,
+        color: ok ? '#35e3c9' : '#ffcf8a',
+        bg: ok ? 'rgba(53,227,201,.1)' : 'rgba(255,181,71,.1)',
+        border: ok ? 'rgba(53,227,201,.45)' : 'rgba(255,181,71,.55)'
+      },
+      suggest: function () { self.setState({ plan: SUG.slice() }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

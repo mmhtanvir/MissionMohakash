@@ -20,7 +20,7 @@ namespace Mohakash
         readonly Dictionary<string, (VisualElement fill, Label val)> bars = new Dictionary<string, (VisualElement, Label)>();
         readonly List<(Label label, VisualElement dot, Func<bool> done, Func<string> text)> objectives = new List<(Label, VisualElement, Func<bool>, Func<string>)>();
         readonly List<Button> speedButtons = new List<Button>();
-        VisualElement eva, prompt, controls;
+        VisualElement eva, rover, prompt, controls, watch, remote; Label remoteInfo;
         public bool ControlsOpen => controls != null && controls.style.display != DisplayStyle.None;
 
         /// <summary>Controls list overlay (H / F1, or from the pause menu). Mission time keeps running.</summary>
@@ -41,16 +41,36 @@ namespace Mohakash
             if (open) Game.SetCursorFree(true);
             else if (!m.Paused && m.Model != null && !m.SystemsOpen) Game.SetCursorFree(false);
         }
-        Label evaWalk;
+        Label evaWalk, roverRange;
         readonly Dictionary<Interactable, VisualElement> markerViews = new Dictionary<Interactable, VisualElement>();
+        // Floating level readouts on outdoor hardware (O2 store, power store, rover batteries, suit tank). Outside only, within GaugeRange.
+        readonly List<(Func<Vector3> pos, Func<string> text, Func<float> level, VisualElement view)> gauges = new List<(Func<Vector3>, Func<string>, Func<float>, VisualElement)>();
+        const float GaugeRange = 40f;
+        public void AddGauge(Func<Vector3> pos, Func<string> text, Func<float> level)
+        {
+            var v = Ui.Box(markers, "marker"); Ui.Text(v, "", "marker-label");
+            gauges.Add((pos, text, level, v));
+        }
         readonly List<(Button btn, PowerLoad load)> loadButtons = new List<(Button, PowerLoad)>();
+        readonly List<(Button btn, PowerLoad load)> repairButtons = new List<(Button, PowerLoad)>();
         readonly List<(Label lbl, PowerLoad load)> loadStates = new List<(Label, PowerLoad)>();
         readonly List<(VisualElement dot, PowerLoad load)> loadDots = new List<(VisualElement, PowerLoad)>();
         Label sysSummary, sysShadow; Button ogsBtn;
         VisualElement inventory; Label invSeis, invSamples, invStored, invTorchState; Button invTorchBtn;
         readonly List<(VisualElement box, Label name, Label count)> invSlots = new List<(VisualElement, Label, Label)>();
         VisualElement invWeightRow, invWeightFill; Label invWeight;
-        LunarDayWidget lunarWidget;
+        Label astroStatusBadge;
+        VisualElement hintBox, linkRow;
+        bool objectivesCollapsed; VisualElement objBody; Label objHeaderLbl; Button objToggleBtn;
+        Label sunCountdownLbl;
+        VisualElement hudKeyHints;
+
+        public void ToggleObjectives()
+        {
+            objectivesCollapsed = !objectivesCollapsed;
+            if (objBody != null) Ui.Show(objBody, !objectivesCollapsed);
+            if (objToggleBtn != null) objToggleBtn.text = objectivesCollapsed ? "▼" : "▲";
+        }
 
         public void Init(Mission1 mission)
         {
@@ -66,79 +86,401 @@ namespace Mohakash
         {
             var scr = Ui.Box(root, "screen", "center", "dim");
             scr.pickingMode = PickingMode.Position;
-            var p = Ui.Panel(scr); p.style.width = 980;
-            Ui.Text(p, "MISSION BRIEFING", "h1");
-            Ui.Text(p, "Mission 1: First Light   -   Moon, lunar south pole   -   72 mission hours", "kicker-blue");
-            Ui.Text(p, "Astronaut, you have landed alone on a sunny ridge near the Moon's south pole. Set up the outpost, keep yourself alive, " +
-                       "place a seismometer far from the base to listen for moonquakes, and survive until the ride home at hour 72. " +
-                       "Everything you bring is limited, so plan ahead.", "text");
-            Ui.Box(p, "divider");
-            Ui.Text(p, "MISSION PLAN", "section");
-            foreach (var step in new[] { "1. Pack your rocket.", "2. Pick up the seismometer crate by the airlock.",
-                                         "3. Carry it past the orange ring (80 m) and press E to set it up.", "4. Log a radiation reading at the post next to the habitat.",
-                                         "5. Bonus: collect 2 rock samples.", "6. Plan your 72 hours (sleep too!) after packing.", "7. Go inside, speed up time and keep power and air going until hour 72." })
-                Ui.Text(p, step, "text-small");
-            Ui.Box(p, "divider");
-            Ui.Text(p, "KEY IDEAS", "section");
-            foreach (var idea in new[] { "<b>Solar power</b>: only works in sunlight, so the battery stores the extra.",
-                                         "<b>Shadow</b>: at hour 40 the sun disappears for 6 hours.",
-                                         "<b>Oxygen</b>: the oxygen maker turns water into air but needs a lot of power.",
-                                         "<b>Spacewalk (EVA)</b>: your suit's oxygen runs out, so stay inside the cyan ring.",
-                                         "<b>Radiation</b>: a solar storm comes around hour 22, so be inside then." })
-                Ui.Text(p, idea, "text-small");
-            Ui.Text(p, "Controls: WASD move - mouse look - E use - R rover - Tab power panel - 1/2/3 time speed - Esc menu", "note");
-            Ui.Text(p, "Note: all numbers in this game are simplified for learning, not real engineering values.", "note");
-            var row = Ui.Box(p, "row"); row.style.justifyContent = Justify.FlexEnd; row.style.marginTop = 10;
-            Ui.Button(row, "Back", () => Game.Load(Game.MenuScene));
-            Ui.Button(row, "Continue to Loadout", () => { scr.RemoveFromHierarchy(); onContinue(); }, "btn-primary");
+            var p = Ui.Panel(scr); p.style.width = 1720; p.style.height = 960;
+            p.style.paddingLeft = 32; p.style.paddingRight = 32; p.style.paddingTop = 24; p.style.paddingBottom = 20;
+
+            // Header row
+            var head = Ui.Box(p, "row");
+            var hTitle = Ui.Text(head, $"MISSION {Levels.Current.N}: {Levels.Current.Name}", "h1");
+            hTitle.style.letterSpacing = 2; hTitle.style.color = new Color(0.92f, 0.96f, 1f);
+            Ui.Box(head, "grow");
+            var chip1 = Ui.Text(head, Levels.Current.Mars ? "Jezero crater, Mars" : "Lunar south pole", "chip");
+            chip1.style.fontSize = 16; chip1.style.paddingTop = 4; chip1.style.paddingBottom = 4;
+            var chip2 = Ui.Text(head, $"{MissionModel.DurationH:0} hours", "chip");
+            chip2.style.fontSize = 16; chip2.style.paddingTop = 4; chip2.style.paddingBottom = 4;
+
+            var sub = Ui.Text(p, Levels.Current.Header, "kicker-blue");
+            sub.style.fontSize = 20; sub.style.marginBottom = 10;
+
+            var narrative = Ui.Text(p, Levels.Current.Narrative, "text");
+            narrative.style.fontSize = 22; narrative.style.color = new Color(0.9f, 0.94f, 1f); narrative.style.marginBottom = 16;
+
+            // Two-column layout matching MissionBriefing.dc.html
+            var cols = Ui.Box(p, "row", "grow"); cols.style.alignItems = Align.Stretch;
+
+            // Left column: MISSION PLAN
+            var leftBox = Ui.Box(cols, "col"); leftBox.style.width = 810; leftBox.style.marginRight = 20;
+            var planPanel = Ui.Box(leftBox, "col", "grow");
+            planPanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(planPanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            planPanel.style.paddingLeft = 20; planPanel.style.paddingRight = 20;
+            planPanel.style.paddingTop = 16; planPanel.style.paddingBottom = 16;
+
+            var pHeader = Ui.Text(planPanel, "WHAT YOU WILL DO", "section");
+            pHeader.style.color = new Color(0.56f, 0.77f, 1f); pHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            pHeader.style.marginBottom = 12;
+
+            var steps = Levels.Current.Steps;
+
+            for (int i = 0; i < steps.Length; i++)
+            {
+                var sRow = Ui.Box(planPanel, "row");
+                sRow.style.marginBottom = 10; sRow.style.alignItems = Align.Center;
+                Ui.Text(sRow, (i + 1).ToString(), "step-circle");
+                var stxt = Ui.Text(sRow, steps[i], "text"); stxt.style.fontSize = 20;
+                stxt.style.whiteSpace = WhiteSpace.Normal; stxt.style.color = new Color(0.91f, 0.94f, 1f);
+            }
+
+            // Right column: KEY IDEAS
+            var rightBox = Ui.Box(cols, "col"); rightBox.style.width = 810;
+            var ideasPanel = Ui.Box(rightBox, "col", "grow");
+            ideasPanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(ideasPanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            ideasPanel.style.paddingLeft = 20; ideasPanel.style.paddingRight = 20;
+            ideasPanel.style.paddingTop = 16; ideasPanel.style.paddingBottom = 16;
+
+            var iHeader = Ui.Text(ideasPanel, "GOOD TO KNOW", "section");
+            iHeader.style.color = new Color(0.56f, 0.77f, 1f); iHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            iHeader.style.marginBottom = 12;
+
+            var ideas = new[]
+            {
+                ("Sun power", "Solar panels only work when the sun shines. The battery saves power for later.", new Color(1f, 0.81f, 0.36f)),
+                ("Dark time", Levels.Current.NightEvery > 0f
+                    ? $"Every night it is dark for {MissionModel.ShadowLength:0} hours. The first night starts at hour {MissionModel.ShadowStart:0}."
+                    : $"At hour {MissionModel.ShadowStart:0} it gets dark for {MissionModel.ShadowLength:0} hours.", new Color(0.65f, 0.71f, 0.99f)),
+                ("Air", Levels.Current.Mars ? "The oxygen maker makes air out of Mars air. It needs lots of power."
+                                            : "The oxygen maker turns water into air. It needs lots of power.", new Color(0.43f, 0.7f, 1f)),
+                ("Going outside", "Your suit has air for a few hours. Come back before it runs out!", new Color(0.22f, 0.85f, 0.96f)),
+                Levels.Current.StormStart >= 0f ? ("Dust storm", $"From hour {Levels.Current.StormStart:0} to {Levels.Current.StormEnd:0} the sun is weak and machines can break.", new Color(1f, 0.71f, 0.28f))
+                : MissionModel.SpeStart >= 0f ? ("Solar storm", $"Around hour {MissionModel.SpeStart:0} the sun sends out a storm. Be inside!", new Color(1f, 0.71f, 0.28f))
+                : ("Radiation", "Space has invisible radiation. The base keeps you safe.", new Color(1f, 0.71f, 0.28f))
+            };
+
+            foreach (var (title, desc, col) in ideas)
+            {
+                var icCard = Ui.Box(ideasPanel, "concept-card");
+                var dot = Ui.Box(icCard);
+                dot.style.width = 12; dot.style.height = 12; Ui.SetRadius(dot, 6);
+                dot.style.backgroundColor = col; dot.style.marginRight = 14; dot.style.flexShrink = 0;
+                var info = Ui.Box(icCard, "col", "grow");
+                var t = Ui.Text(info, title, "small");
+                t.style.unityFontStyleAndWeight = FontStyle.Bold; t.style.color = col;
+                var d = Ui.Text(info, desc, "text-small");
+                d.style.color = new Color(0.85f, 0.9f, 0.98f);
+            }
+
+            // Controls strip
+            var ctlPanel = Ui.Box(p, "row");
+            ctlPanel.style.marginTop = 14; ctlPanel.style.paddingLeft = 16; ctlPanel.style.paddingRight = 16;
+            ctlPanel.style.paddingTop = 8; ctlPanel.style.paddingBottom = 8;
+            Ui.SetBorder(ctlPanel, 1, new Color(0.43f, 0.68f, 1f, 0.35f), 4);
+            ctlPanel.style.backgroundColor = new Color(0.04f, 0.1f, 0.21f, 0.85f);
+            var ctlH = Ui.Text(ctlPanel, "CONTROLS: ", "tiny");
+            ctlH.style.color = new Color(0.56f, 0.77f, 1f); ctlH.style.unityFontStyleAndWeight = FontStyle.Bold;
+            ctlH.style.marginRight = 10;
+
+            foreach (var (k, a) in new[] { ("WASD", "Walk"), ("Mouse", "Look"), ("E", "Use"), ("R", "Rover"), ("Tab", "Base controls"), ("1 2 3", "Speed up time"), ("Esc", "Menu") })
+            {
+                var item = Ui.Box(ctlPanel, "row"); item.style.marginRight = 16;
+                Ui.Text(item, k, "key-cap");
+                var lb = Ui.Text(item, a, "small"); lb.style.color = new Color(0.85f, 0.9f, 0.98f);
+            }
+
+            // Footer
+            var foot = Ui.Box(p, "row"); foot.style.marginTop = 14; foot.style.alignItems = Align.Center;
+            var note = Ui.Text(foot, "The numbers in this game are made simple for learning.", "small", "muted");
+            note.style.flexGrow = 1;
+
+            Ui.Button(foot, "BACK", () => Game.Load(Game.MenuScene));
+            var cta = Ui.Button(foot, "NEXT: PACK YOUR ROCKET  >", () => { scr.RemoveFromHierarchy(); onContinue(); }, "btn-primary", "btn-big");
+            cta.style.minWidth = 280; cta.style.fontSize = 22;
+
             TestAdvance = _ => { scr.RemoveFromHierarchy(); onContinue(); };
         }
 
-        /// <summary>Simple loadout: standard gear always packed + extras ticked until the rocket is full (GDD 540 kg / 125 Cr).</summary>
+        struct ExtraItemInfo { public string Key, Name, Cat, CatLabel, Benefit, Desc; }
+
+        /// <summary>What one extra really adds on top of the standard gear (from Catalog, so cards match the fit check).</summary>
+        static (float mass, float cost) ExtraDelta(string key)
+        {
+            var a = Catalog.Simple(new string[0]); var b = Catalog.Simple(new[] { key });
+            return (b.Mass - a.Mass, b.Cost - a.Cost);
+        }
+
+        HashSet<string> loadoutPicks;   // survives BACK from the planner / briefing
+        static readonly ExtraItemInfo[] ExtrasMeta = new[]
+        {
+            new ExtraItemInfo { Key = "rover", Name = "Rover + garage", Cat = "MOBILITY", CatLabel = "GETTING AROUND", Benefit = "Drive 3× faster", Desc = "A space car and a garage to charge it. Much faster than walking!" },
+            new ExtraItemInfo { Key = "bat2", Name = "Second battery", Cat = "POWER", CatLabel = "POWER", Benefit = "Power for longer", Desc = "Keeps the lights on when it gets dark." },
+            new ExtraItemInfo { Key = "sol3", Name = "Extra solar panel", Cat = "POWER", CatLabel = "POWER", Benefit = "More sun power", Desc = "One more solar panel. Fills the battery faster." },
+            new ExtraItemInfo { Key = "tank", Name = "Air tank", Cat = "LIFE SUPPORT", CatLabel = "AIR & WATER", Benefit = "Save more air", Desc = "Keeps extra oxygen (air) for later, so none is wasted." },
+            new ExtraItemInfo { Key = "water", Name = "Extra water (10 L)", Cat = "LIFE SUPPORT", CatLabel = "AIR & WATER", Benefit = "More water", Desc = "More water to drink. The oxygen maker uses water too." },
+            new ExtraItemInfo { Key = "wtank", Name = "Water tank (40 L)", Cat = "LIFE SUPPORT", CatLabel = "AIR & WATER", Benefit = "Hold more water", Desc = "A big tank, so you have room for extra water." },
+            new ExtraItemInfo { Key = "spare", Name = "Spare parts kit", Cat = "REPAIR", CatLabel = "FIXING", Benefit = "Fix things fast", Desc = "Parts to fix your suit or a broken machine right away." },
+            new ExtraItemInfo { Key = "cart", Name = "Extra air filter", Cat = "LIFE SUPPORT", CatLabel = "AIR & WATER", Benefit = "Clean air for longer", Desc = "Cleans out the bad air (CO₂) you breathe out." }
+        };
+
+        /// <summary>Loadout screen matching Loadout.dc.html: standard gear (13 packed), categorized extras, rocket capacity bars, detail inspector, and packed list.</summary>
         public void ShowLoadout(Action<Loadout> onLaunch)
         {
-            var chosen = new HashSet<string> { "rover" };
+            var chosen = loadoutPicks ??= new HashSet<string> { "rover" };
+            string activeTab = "ALL";
+            string inspectedId = "rover";
+
             var scr = Ui.Box(root, "screen", "center", "dim");
             scr.pickingMode = PickingMode.Position;
-            var p = Ui.Panel(scr); p.style.width = 900;
-            Ui.Text(p, "LOADOUT", "h1");
-            Ui.Text(p, "STANDARD GEAR (always packed)", "section");
-            var chips = Ui.Box(p, "row", "wrap");
-            foreach (var (_, _, label) in Catalog.Standard) Ui.Text(chips, label, "chip");
-            Ui.Box(p, "divider");
-            Ui.Text(p, "EXTRAS - tick what you want until the rocket is full", "section");
-            var rows = new List<(Catalog.Extra e, Toggle t)>();
-            Label capText = null; Button launch = null; VisualElement capFill = null;
-            foreach (var e in Catalog.Extras)
+            var p = Ui.Panel(scr); p.style.width = 1720; p.style.height = 960;
+            p.style.paddingLeft = 32; p.style.paddingRight = 32; p.style.paddingTop = 24; p.style.paddingBottom = 20;
+
+            // Header row
+            var head = Ui.Box(p, "row", "noshrink");
+            var hTitle = Ui.Text(head, "PACK YOUR ROCKET", "h1");
+            hTitle.style.letterSpacing = 2; hTitle.style.color = new Color(0.92f, 0.96f, 1f);
+            Ui.Box(head, "grow");
+            Ui.Text(head, $"MISSION {Levels.Current.N}: {Levels.Current.Name}", "kicker-blue").style.fontSize = 20;
+
+            var sub = Ui.Text(p, "The things you need are already packed. Click to add extras, if they fit in the rocket.", "text", "muted");
+            sub.style.marginBottom = 12;
+
+            var mainRow = Ui.Box(p, "row", "grow"); mainRow.style.alignItems = Align.Stretch;
+
+            // Left Column: STANDARD GEAR (width 360)
+            var stdCol = Ui.Box(mainRow, "col"); stdCol.style.width = 360; stdCol.style.marginRight = 16;
+            var stdPanel = Ui.Box(stdCol, "col", "grow");
+            stdPanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(stdPanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            stdPanel.style.paddingLeft = 16; stdPanel.style.paddingRight = 16;
+            stdPanel.style.paddingTop = 14; stdPanel.style.paddingBottom = 14;
+
+            var sH = Ui.Text(stdPanel, "ALREADY PACKED", "section");
+            sH.style.color = new Color(0.56f, 0.77f, 1f); sH.style.unityFontStyleAndWeight = FontStyle.Bold;
+            var sSub = Ui.Text(stdPanel, "You always get these.", "tiny", "muted");
+            sSub.style.marginBottom = 10;
+
+            var stdScroll = Ui.Add(stdPanel, new ScrollView(), "grow");
+            foreach (var (_, _, label) in Catalog.Standard)
             {
-                var t = Ui.Add(p, new Toggle { value = chosen.Contains(e.Key) }, "extra");
-                var extra = e;
-                t.RegisterValueChangedCallback(ev => { if (ev.newValue) chosen.Add(extra.Key); else chosen.Remove(extra.Key); Refresh(); });
-                t.label = $"{extra.Name}  -  {extra.Benefit}";
-                rows.Add((extra, t));
+                var gearPill = Ui.Box(stdScroll, "row");
+                gearPill.style.height = 36; gearPill.style.marginBottom = 6;
+                gearPill.style.backgroundColor = new Color(0.08f, 0.18f, 0.33f, 0.55f);
+                Ui.SetBorder(gearPill, 1, new Color(0.43f, 0.68f, 1f, 0.25f), 4);
+                gearPill.style.paddingLeft = 10; gearPill.style.paddingRight = 10;
+                var dot = Ui.Box(gearPill); dot.style.width = 6; dot.style.height = 6; Ui.SetRadius(dot, 3);
+                dot.style.backgroundColor = new Color(0.35f, 0.89f, 0.79f); dot.style.marginRight = 8;
+                var lbl = Ui.Text(gearPill, label, "small"); lbl.style.color = new Color(0.85f, 0.91f, 0.98f);
             }
-            Ui.Text(p, "ROCKET CAPACITY", "section");
-            capFill = Ui.Bar(p, "bar-big").fill;
-            capText = Ui.Text(p, "", "text-small");
-            var row = Ui.Box(p, "row"); row.style.justifyContent = Justify.FlexEnd; row.style.marginTop = 10;
-            Ui.Button(row, "Advanced: full cargo list", () => { scr.RemoveFromHierarchy(); ShowAdvancedLoadout(onLaunch); });
-            Ui.Button(row, "Back", () => { scr.RemoveFromHierarchy(); ShowBriefing(() => ShowLoadout(onLaunch)); });
-            launch = Ui.Button(row, "LAUNCH MISSION", () => { scr.RemoveFromHierarchy(); StartCoroutine(FadeThen(() => onLaunch(Catalog.Simple(chosen)))); }, "btn-primary");
+
+            // Center Column: EXTRAS (width 830)
+            var extCol = Ui.Box(mainRow, "col"); extCol.style.width = 830; extCol.style.marginRight = 16;
+            var extPanel = Ui.Box(extCol, "col", "grow");
+            extPanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(extPanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            extPanel.style.paddingLeft = 16; extPanel.style.paddingRight = 16;
+            extPanel.style.paddingTop = 14; extPanel.style.paddingBottom = 14;
+
+            var eH = Ui.Text(extPanel, "EXTRAS YOU CAN ADD", "section");
+            eH.style.color = new Color(0.56f, 0.77f, 1f); eH.style.unityFontStyleAndWeight = FontStyle.Bold;
+            var eSub = Ui.Text(extPanel, "Click a card to add it. Click again to take it out. Grey cards don't fit.", "tiny", "muted");
+            eSub.style.marginBottom = 10;
+
+            // Tabs row
+            var tabRow = Ui.Box(extPanel, "row", "noshrink");
+            Ui.Show(tabRow, false);   // 8 cards fit on one page; category tabs were one more thing to read
+            tabRow.style.marginBottom = 12;
+            var tabBtns = new Dictionary<string, Button>();
+
+            var cardScroll = Ui.Add(extPanel, new ScrollView(), "grow");
+            var cardGrid = Ui.Box(cardScroll, "row", "wrap");
+
+            // Right Column: LIMITS & DETAILS (width 430)
+            var rightCol = Ui.Box(mainRow, "col", "grow");
+            var rightPanel = Ui.Box(rightCol, "col", "grow");
+            rightPanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(rightPanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            rightPanel.style.paddingLeft = 16; rightPanel.style.paddingRight = 16;
+            rightPanel.style.paddingTop = 14; rightPanel.style.paddingBottom = 14;
+
+            var capH = Ui.Text(rightPanel, "HOW FULL IS THE ROCKET?", "section");
+            capH.style.color = new Color(0.56f, 0.77f, 1f); capH.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+            Ui.Text(rightPanel, "WEIGHT", "tiny", "muted").style.marginTop = 6;
+            var (_, massFill) = Ui.Bar(rightPanel, "bar-big");
+            var massText = Ui.Text(rightPanel, "", "tiny"); massText.style.marginBottom = 6;
+
+            Ui.Text(rightPanel, "MONEY", "tiny", "muted");
+            var (_, budgetFill) = Ui.Bar(rightPanel, "bar-big");
+            var budgetText = Ui.Text(rightPanel, "", "tiny"); budgetText.style.marginBottom = 14;
+
+            // Detail inspector box
+            var detailBox = Ui.Box(rightPanel, "col");
+            detailBox.style.backgroundColor = new Color(0.05f, 0.12f, 0.24f, 0.7f);
+            Ui.SetBorder(detailBox, 1, new Color(0.43f, 0.68f, 1f, 0.3f), 6);
+            detailBox.style.paddingLeft = 12; detailBox.style.paddingRight = 12;
+            detailBox.style.paddingTop = 10; detailBox.style.paddingBottom = 10; detailBox.style.marginBottom = 14;
+
+            var dTitle = Ui.Text(detailBox, "", "h3"); dTitle.style.color = Color.white;
+            var dCat = Ui.Text(detailBox, "", "tiny"); dCat.style.color = new Color(0.4f, 0.8f, 1f); dCat.style.marginBottom = 4;
+            var dFx = Ui.Text(detailBox, "", "text-small"); dFx.style.color = new Color(0.35f, 0.89f, 0.79f); dFx.style.unityFontStyleAndWeight = FontStyle.Bold;
+            var dDesc = Ui.Text(detailBox, "", "tiny"); dDesc.style.color = new Color(0.8f, 0.88f, 0.96f); dDesc.style.whiteSpace = WhiteSpace.Normal; dDesc.style.marginBottom = 6;
+            var dStatus = Ui.Text(detailBox, "", "tiny"); dStatus.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+            // Packed list
+            var pkH = Ui.Text(rightPanel, "YOUR EXTRAS", "section");
+            pkH.style.color = new Color(0.56f, 0.77f, 1f); pkH.style.unityFontStyleAndWeight = FontStyle.Bold;
+            var packedScroll = Ui.Add(rightPanel, new ScrollView(), "grow");
+
+            var tipLbl = Ui.Text(rightPanel, "Too full? Press ✕ to take something out.", "tiny", "muted");
+            tipLbl.style.marginTop = 6;
+
+            // Bottom bar
+            var foot = Ui.Box(p, "row"); foot.style.marginTop = 14; foot.style.alignItems = Align.Center;
+            Ui.Button(foot, "BACK", () => { scr.RemoveFromHierarchy(); ShowBriefing(() => ShowLoadout(onLaunch)); });
+            Ui.Button(foot, "Expert: full cargo list", () => { scr.RemoveFromHierarchy(); ShowAdvancedLoadout(onLaunch); });
+            Ui.Box(foot, "grow");
+            var launch = Ui.Button(foot, "NEXT: PLAN YOUR DAYS  >", () =>
+            {
+                scr.RemoveFromHierarchy();
+                StartCoroutine(FadeThen(() => onLaunch(Catalog.Simple(chosen))));
+            }, "btn-primary", "btn-big");
+            launch.style.minWidth = 280; launch.style.fontSize = 22;
+
+            // Visual elements dictionary for card views
+            var cardViews = new Dictionary<string, (VisualElement card, Label chk, Label statusLbl, VisualElement topRow)>();
+
+            void UpdateInspector()
+            {
+                var meta = System.Array.Find(ExtrasMeta, x => x.Key == inspectedId);
+                if (meta.Key == null) meta = ExtrasMeta[0];
+                var kit = Catalog.Simple(chosen);
+                bool isPacked = chosen.Contains(meta.Key);
+                bool fits = isPacked || Catalog.Simple(chosen.Concat(new[] { meta.Key })).WithinLimits;
+
+                dTitle.text = meta.Name;
+                dCat.text = meta.CatLabel;
+                dFx.text = meta.Benefit;
+                dDesc.text = meta.Desc;
+                dStatus.text = !fits ? "It won't fit. Take something out first." : isPacked ? "In the rocket!" : "Not packed. Click the card to add it.";
+                dStatus.style.color = !fits ? new Color(1f, 0.45f, 0.45f) : isPacked ? new Color(1f, 0.69f, 0.4f) : new Color(0.6f, 0.75f, 0.9f);
+            }
 
             void Refresh()
             {
                 var kit = Catalog.Simple(chosen);
-                float fill = Mathf.Max(kit.Mass / Catalog.M1Cargo, kit.Cost / Catalog.M1Budget);
-                Ui.SetBar(capFill, fill, fill > 1f ? Severity.Critical : fill > 0.9f ? Severity.Warning : Severity.Good);
-                capText.text = $"Mass {kit.Mass:0} / {Catalog.M1Cargo:0} kg     Budget {kit.Cost:0} / {Catalog.M1Budget:0} Cr" + (kit.WithinLimits ? "" : "     TOO MUCH - untick something");
+                float massRatio = kit.Mass / Catalog.M1Cargo;
+                float budgetRatio = kit.Cost / Catalog.M1Budget;
+                float maxFill = Mathf.Max(massRatio, budgetRatio);
+
+                Ui.SetBar(massFill, massRatio, kit.Mass > Catalog.M1Cargo ? Severity.Critical : kit.Mass > 0.9f * Catalog.M1Cargo ? Severity.Warning : Severity.Good);
+                Ui.SetBar(budgetFill, budgetRatio, kit.Cost > Catalog.M1Budget ? Severity.Critical : kit.Cost > 0.9f * Catalog.M1Budget ? Severity.Warning : Severity.Good);
+
+                massText.text = $"{kit.Mass:0} of {Catalog.M1Cargo:0} kg";
+                budgetText.text = $"{kit.Cost:0} of {Catalog.M1Budget:0} coins";
+
                 launch.SetEnabled(kit.WithinLimits);
-                foreach (var (e, t) in rows)
+
+                // Update cards
+                foreach (var em in ExtrasMeta)
                 {
-                    bool fits = chosen.Contains(e.Key) || Catalog.Simple(chosen.Append(e.Key)).WithinLimits;
-                    t.SetEnabled(fits);
-                    t.EnableInClassList("extra-on", chosen.Contains(e.Key));
+                    if (!cardViews.TryGetValue(em.Key, out var cv)) continue;
+                    bool isPacked = chosen.Contains(em.Key);
+                    bool fits = isPacked || Catalog.Simple(chosen.Concat(new[] { em.Key })).WithinLimits;
+
+                    bool tabMatch = activeTab == "ALL" || em.Cat == activeTab;
+                    cv.card.style.display = tabMatch ? DisplayStyle.Flex : DisplayStyle.None;
+
+                    cv.card.EnableInClassList("extra-card-selected", isPacked);
+                    cv.card.EnableInClassList("extra-card-dim", !fits && !isPacked);
+
+                    cv.chk.text = isPacked ? "✓" : "";
+                    cv.chk.EnableInClassList("chk-box-on", isPacked);
+
+                    cv.statusLbl.text = !fits && !isPacked ? "TOO BIG" : isPacked ? "PACKED" : "";
+                    cv.statusLbl.style.color = !fits ? new Color(1f, 0.45f, 0.45f) : new Color(1f, 0.7f, 0.35f);
                 }
+
+                // Update packed list
+                packedScroll.Clear();
+                foreach (var em in ExtrasMeta)
+                {
+                    if (!chosen.Contains(em.Key)) continue;
+                    var itemKey = em.Key;
+                    var row = Ui.Box(packedScroll, "row");
+                    row.style.height = 36; row.style.marginBottom = 6;
+                    row.style.paddingLeft = 10; row.style.paddingRight = 6;
+                    row.style.backgroundColor = new Color(0.79f, 0.34f, 0.05f, 0.2f);
+                    Ui.SetBorder(row, 1, new Color(1f, 0.69f, 0.4f, 0.45f), 4);
+
+                    var nameLbl = Ui.Text(row, em.Name, "small"); nameLbl.style.flexGrow = 1; nameLbl.style.color = Color.white;
+                    var rmBtn = Ui.Button(row, "✕", () =>
+                    {
+                        chosen.Remove(itemKey);
+                        inspectedId = itemKey;
+                        Refresh();
+                    }, "btn-small");
+                    rmBtn.style.color = new Color(1f, 0.8f, 0.6f);
+                }
+
+                UpdateInspector();
             }
+
+            // Tabs
+            foreach (var t in new[] { "ALL", "POWER", "LIFE SUPPORT", "MOBILITY", "REPAIR" })
+            {
+                var tabName = t;
+                var btn = Ui.Button(tabRow, tabName, () =>
+                {
+                    activeTab = tabName;
+                    foreach (var kv in tabBtns) kv.Value.EnableInClassList("cat-tab-on", kv.Key == activeTab);
+                    Refresh();
+                }, "cat-tab");
+                tabBtns[tabName] = btn;
+            }
+            tabBtns["ALL"].AddToClassList("cat-tab-on");
+
+            // Build cards
+            foreach (var em in ExtrasMeta)
+            {
+                var extraKey = em.Key;
+                var card = Ui.Box(cardGrid, "extra-card");
+                card.pickingMode = PickingMode.Position;   // Ui.Box is click-through by default
+
+                var topRow = Ui.Box(card, "row");
+                var catLabel = Ui.Text(topRow, em.CatLabel, "tiny");
+                catLabel.style.color = new Color(0.4f, 0.75f, 1f); catLabel.style.flexGrow = 1;
+                var chk = Ui.Text(topRow, "", "chk-box");
+
+                var title = Ui.Text(card, em.Name, "text-small");
+                title.style.color = Color.white; title.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+                var fx = Ui.Text(card, em.Benefit, "tiny");
+                fx.style.color = new Color(0.35f, 0.89f, 0.79f);
+
+                var botRow = Ui.Box(card, "row");
+                botRow.style.marginTop = StyleKeyword.Auto;
+                var (dm, dc) = ExtraDelta(em.Key);
+                var metaLbl = Ui.Text(botRow, $"{dm:0} kg · {dc:0} coins", "tiny", "muted");
+                metaLbl.style.flexGrow = 1;
+                var statusLbl = Ui.Text(botRow, "", "tiny");
+
+                card.RegisterCallback<ClickEvent>(_ =>
+                {
+                    inspectedId = extraKey;
+                    if (chosen.Contains(extraKey))
+                    {
+                        chosen.Remove(extraKey);
+                    }
+                    else
+                    {
+                        if (Catalog.Simple(chosen.Concat(new[] { extraKey })).WithinLimits)
+                            chosen.Add(extraKey);
+                    }
+                    Refresh();
+                });
+
+                cardViews[em.Key] = (card, chk, statusLbl, topRow);
+            }
+
             Refresh();
             TestAdvance = k => { scr.RemoveFromHierarchy(); StartCoroutine(FadeThen(() => onLaunch(k ?? Catalog.Simple(chosen)))); };
         }
@@ -218,57 +560,219 @@ namespace Mohakash
 
         // ================================================================== 72 h planner
 
-        /// <summary>Pre-launch schedule: a table of 6 h blocks, each with one chosen activity (sleep included). Warnings advise, never block.</summary>
+        static (Label val, Label sub) MakeSummaryTile(VisualElement parent, string title)
+        {
+            var t = Ui.Box(parent, "summary-tile");
+            var l = Ui.Text(t, title, "tiny"); l.style.color = new Color(0.56f, 0.69f, 0.84f); l.style.unityFontStyleAndWeight = FontStyle.Bold;
+            var v = Ui.Text(t, "", "h1"); v.style.color = Color.white; v.style.fontSize = 28;
+            var s = Ui.Text(t, "", "tiny"); s.style.color = new Color(0.62f, 0.71f, 0.83f);
+            return (v, s);
+        }
+
+        static void MakeTimelineLegend(VisualElement parent, string text, Color c)
+        {
+            var r = Ui.Box(parent, "row"); r.style.marginRight = 14; r.style.marginBottom = 4;
+            var dot = Ui.Box(r); dot.style.width = 10; dot.style.height = 10; Ui.SetRadius(dot, 3);
+            dot.style.backgroundColor = c; dot.style.marginRight = 6;
+            var l = Ui.Text(r, text, "tiny"); l.style.color = new Color(0.79f, 0.85f, 0.92f);
+        }
+
+        /// <summary>Pre-launch schedule matching PlanHours.dc.html: 12 6-hour blocks, dropdown activities with tags, event badges, summary tiles, and 72-hour timeline.</summary>
         public void ShowPlanner(Loadout kit, Action<MissionPlan> onLaunch, Action onBack)
         {
             var plan = MissionPlan.Suggested(kit);
             var acts = MissionPlan.Available(kit);
             var names = acts.Select(MissionPlan.Name).ToList();
+            Action refresh = null;
+
             var scr = Ui.Box(root, "screen", "center", "dim");
             scr.pickingMode = PickingMode.Position;
-            var p = Ui.Panel(scr); p.style.width = 1080;
-            Ui.Text(p, "PLAN YOUR 72 HOURS", "h1");
-            Ui.Text(p, "Choose what you will do in each 6-hour block. Don't forget to sleep! Your plan becomes the checklist on screen during the mission.", "text-small");
+            var p = Ui.Panel(scr); p.style.width = 1720; p.style.height = 960;
+            p.style.paddingLeft = 32; p.style.paddingRight = 32; p.style.paddingTop = 24; p.style.paddingBottom = 20;
 
-            var head = Ui.Box(p, "row"); head.style.marginTop = 8;
-            Ui.Text(head, "HOURS", "section").style.width = 100;
-            Ui.Text(head, "WHAT I WILL DO", "section").style.width = 520;
-            Ui.Text(head, "WHAT HAPPENS ON THE MOON", "section", "grow");
-            var table = Ui.Add(p, new ScrollView()); table.style.maxHeight = 520;
+            // Header row
+            var head = Ui.Box(p, "row", "noshrink");
+            var hTitle = Ui.Text(head, $"PLAN YOUR {MissionModel.DurationH:0} HOURS", "h1");
+            hTitle.style.letterSpacing = 2; hTitle.style.color = new Color(0.92f, 0.96f, 1f);
+            Ui.Box(head, "grow");
+            Ui.Text(head, $"MISSION {Levels.Current.N}: {Levels.Current.Name}", "kicker-blue").style.fontSize = 20;
+
+            var sub = Ui.Text(p, "We made a plan for you! You can change any line, or just press START MISSION. Don't forget to sleep!", "text", "muted");
+            sub.style.marginBottom = 12;
+
+            var mainRow = Ui.Box(p, "row", "grow"); mainRow.style.alignItems = Align.Stretch;
+
+            // Left / Center column: 12-block table (width 1100)
+            var tableCol = Ui.Box(mainRow, "col"); tableCol.style.width = 1100; tableCol.style.marginRight = 20;
+            var tablePanel = Ui.Box(tableCol, "col", "grow");
+            tablePanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(tablePanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            tablePanel.style.paddingLeft = 16; tablePanel.style.paddingRight = 16;
+            tablePanel.style.paddingTop = 12; tablePanel.style.paddingBottom = 12;
+
+            var tHead = Ui.Box(tablePanel, "row", "noshrink");
+            tHead.style.borderBottomWidth = 1; tHead.style.borderBottomColor = new Color(0.43f, 0.68f, 1f, 0.25f);
+            tHead.style.paddingBottom = 8; tHead.style.marginBottom = 8;
+            var colH1 = Ui.Text(tHead, "WHEN", "section"); colH1.style.width = 96; colH1.style.color = new Color(0.5f, 0.61f, 0.77f);
+            var colH2 = Ui.Text(tHead, "WHAT YOU DO", "section"); colH2.style.width = 540; colH2.style.color = new Color(0.5f, 0.61f, 0.77f);
+            var colH3 = Ui.Text(tHead, "WHAT HAPPENS", "section", "grow"); colH3.style.color = new Color(0.5f, 0.61f, 0.77f);
+
+            var tableScroll = Ui.Add(tablePanel, new ScrollView(), "grow");
             var drops = new DropdownField[MissionPlan.Blocks];
-            Label summary = null, warn = null;
+            var typeTags = new Label[MissionPlan.Blocks];
+
             for (int i = 0; i < MissionPlan.Blocks; i++)
             {
                 int b = i;
-                var r = Ui.Box(table, "row"); r.style.marginBottom = 2;
-                Ui.Text(r, MissionPlan.Hours(b), "text-small").style.width = 100;
+                var r = Ui.Box(tableScroll, "row");
+                r.style.height = 44; r.style.marginBottom = 4; r.style.alignItems = Align.Center;
+
+                var hrsLbl = Ui.Text(r, MissionPlan.Hours(b), "text-small");
+                hrsLbl.style.width = 110; hrsLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+                hrsLbl.style.color = new Color(0.84f, 0.89f, 0.96f);
+
                 var d = Ui.Add(r, new DropdownField(names, acts.IndexOf(plan.At[b])));
-                d.style.width = 520; d.style.fontSize = 17;
-                d.RegisterValueChangedCallback(_ => { plan.At[b] = acts[d.index]; Refresh(); });
+                d.style.width = 460; d.style.fontSize = 17;
                 drops[b] = d;
-                Ui.Text(r, MissionPlan.Events(b), "small", "cyan", "grow");
+
+                var tagLbl = Ui.Text(r, "", "tiny");
+                tagLbl.style.width = 65; tagLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+                tagLbl.style.unityTextAlign = TextAnchor.MiddleCenter;
+                tagLbl.style.marginLeft = 6;
+                tagLbl.style.width = 80; typeTags[b] = tagLbl;
+
+                d.RegisterValueChangedCallback(_ =>
+                {
+                    plan.At[b] = acts[d.index];
+                    refresh?.Invoke();
+                });
+
+                var evText = MissionPlan.Events(b);
+                var evRow = Ui.Box(r, "row", "grow"); evRow.style.marginLeft = 16;
+                if (!string.IsNullOrEmpty(evText))
+                {
+                    var evBadge = Ui.Box(evRow, "row");
+                    evBadge.style.paddingLeft = 10; evBadge.style.paddingRight = 10;
+                    evBadge.style.paddingTop = 4; evBadge.style.paddingBottom = 4;
+
+                    Color evColor = evText.Contains("Solar storm") ? new Color(1f, 0.71f, 0.28f)
+                                  : evText.Contains("Dark") ? new Color(0.78f, 0.82f, 1f)
+                                  : evText.Contains("Moonquake") ? new Color(1f, 0.55f, 0.55f)
+                                  : new Color(0.21f, 0.89f, 0.79f);
+
+                    Ui.SetBorder(evBadge, 1, new Color(evColor.r, evColor.g, evColor.b, 0.5f), 12);
+                    evBadge.style.backgroundColor = new Color(evColor.r, evColor.g, evColor.b, 0.12f);
+
+                    var evDot = Ui.Box(evBadge); evDot.style.width = 8; evDot.style.height = 8; Ui.SetRadius(evDot, 4);
+                    evDot.style.backgroundColor = evColor; evDot.style.marginRight = 6;
+                    var evLbl = Ui.Text(evBadge, evText, "tiny"); evLbl.style.color = evColor; evLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+                }
             }
-            summary = Ui.Text(p, "", "text-small"); summary.style.marginTop = 8;
-            warn = Ui.Text(p, "", "small"); warn.enableRichText = true;
-            var row = Ui.Box(p, "row"); row.style.justifyContent = Justify.FlexEnd; row.style.marginTop = 10;
-            Ui.Button(row, "Use suggested plan", () =>
+
+            // Right Column: SUMMARY & TIMELINE (width 540)
+            var rightCol = Ui.Box(mainRow, "col", "grow");
+            var rightPanel = Ui.Box(rightCol, "col", "grow");
+            rightPanel.style.backgroundColor = new Color(0.02f, 0.06f, 0.13f, 0.84f);
+            Ui.SetBorder(rightPanel, 1, new Color(0.43f, 0.68f, 1f, 0.38f), 6);
+            rightPanel.style.paddingLeft = 18; rightPanel.style.paddingRight = 18;
+            rightPanel.style.paddingTop = 14; rightPanel.style.paddingBottom = 14;
+
+            var statBanner = Ui.Box(rightPanel, "col");
+            statBanner.style.paddingLeft = 14; statBanner.style.paddingRight = 14;
+            statBanner.style.paddingTop = 10; statBanner.style.paddingBottom = 10;
+            Ui.SetBorderWidth(statBanner, 1);
+            Ui.SetRadius(statBanner, 6);
+            statBanner.style.marginBottom = 14;
+            var statBannerText = Ui.Text(statBanner, "", "small"); statBannerText.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+            // 3 Summary tiles
+            var (tileSleepVal, tileSleepSub) = MakeSummaryTile(rightPanel, "SLEEP");
+            var (tileEvaVal, tileEvaSub) = MakeSummaryTile(rightPanel, "TRIPS OUTSIDE");
+            var (tileWorkVal, tileWorkSub) = MakeSummaryTile(rightPanel, "INSIDE THE BASE");
+
+            // 72-Hour Timeline
+            var tlH = Ui.Text(rightPanel, "YOUR PLAN AT A GLANCE", "section");
+            tlH.style.color = new Color(0.56f, 0.77f, 1f); tlH.style.unityFontStyleAndWeight = FontStyle.Bold;
+            tlH.style.marginTop = 6;
+
+            var timelineBar = Ui.Box(rightPanel, "row");
+            timelineBar.style.height = 20; Ui.SetRadius(timelineBar, 4); timelineBar.style.overflow = Overflow.Hidden;
+            timelineBar.style.backgroundColor = new Color(0.1f, 0.1f, 0.15f, 0.8f);
+            timelineBar.style.marginBottom = 10;
+
+            var segs = new VisualElement[MissionPlan.Blocks];
+            for (int b = 0; b < MissionPlan.Blocks; b++)
+            {
+                var seg = Ui.Box(timelineBar);
+                seg.style.flexGrow = 1; seg.style.height = Length.Percent(100);
+                segs[b] = seg;
+            }
+
+            // Legend
+            var leg = Ui.Box(rightPanel, "row", "wrap");
+            MakeTimelineLegend(leg, "Outside", new Color(1f, 0.54f, 0.16f));
+            MakeTimelineLegend(leg, "Sleep", new Color(0.56f, 0.66f, 1f));
+            MakeTimelineLegend(leg, "Inside", new Color(0.21f, 0.89f, 0.79f));
+
+            // Footer
+            var foot = Ui.Box(p, "row"); foot.style.marginTop = 14; foot.style.alignItems = Align.Center;
+            var sugBtn = Ui.Button(foot, "UNDO MY CHANGES", () =>
             {
                 var s = MissionPlan.Suggested(kit);
-                for (int b = 0; b < MissionPlan.Blocks; b++) { plan.At[b] = s.At[b]; drops[b].SetValueWithoutNotify(MissionPlan.Name(s.At[b])); }
-                Refresh();
+                for (int b = 0; b < MissionPlan.Blocks; b++)
+                {
+                    plan.At[b] = s.At[b];
+                    drops[b].SetValueWithoutNotify(MissionPlan.Name(s.At[b]));
+                }
+                refresh?.Invoke();
             });
-            Ui.Button(row, "Back to loadout", () => { scr.RemoveFromHierarchy(); onBack(); });
-            Ui.Button(row, "START MISSION", () => { scr.RemoveFromHierarchy(); StartCoroutine(FadeThen(() => onLaunch(plan))); }, "btn-primary");
+            sugBtn.style.fontSize = 17;
 
-            void Refresh()
+            Ui.Box(foot, "grow");
+            Ui.Button(foot, "BACK TO PACKING", () => { scr.RemoveFromHierarchy(); onBack(); });
+            var startBtn = Ui.Button(foot, "START MISSION  >", () =>
             {
-                int sleep = plan.At.Count(a => a == Activity.Sleep), eva = plan.At.Count(MissionPlan.Eva);
-                summary.text = $"Sleep {sleep * MissionPlan.BlockH} h   -   Spacewalks {eva}   -   Work {(MissionPlan.Blocks - sleep - eva) * MissionPlan.BlockH} h";
+                scr.RemoveFromHierarchy();
+                StartCoroutine(FadeThen(() => onLaunch(plan)));
+            }, "btn-primary", "btn-big");
+            startBtn.style.minWidth = 280; startBtn.style.fontSize = 22;
+
+            refresh = () =>
+            {
+                for (int b = 0; b < MissionPlan.Blocks; b++)
+                {
+                    var a = plan.At[b];
+                    bool isSleep = a == Activity.Sleep;
+                    bool isEva = MissionPlan.Eva(a);
+                    Color c = isSleep ? new Color(0.56f, 0.66f, 1f) : isEva ? new Color(1f, 0.54f, 0.16f) : new Color(0.21f, 0.89f, 0.79f);
+                    segs[b].style.backgroundColor = c;
+
+                    typeTags[b].text = isSleep ? "SLEEP" : isEva ? "OUTSIDE" : "INSIDE";
+                    typeTags[b].style.color = c;
+                }
+
+                int sleep = plan.At.Count(a => a == Activity.Sleep);
+                int eva = plan.At.Count(MissionPlan.Eva);
+                int work = MissionPlan.Blocks - sleep - eva;
+
+                tileSleepVal.text = $"{sleep * MissionPlan.BlockH} h";
+                tileSleepSub.text = $"you need about {Mathf.Max(2, MissionPlan.Blocks / 4) * MissionPlan.BlockH} h";
+
+                tileEvaVal.text = $"{eva}";
+                tileEvaSub.text = $"{eva * MissionPlan.BlockH} hours outside";
+
+                tileWorkVal.text = $"{work * MissionPlan.BlockH} h";
+                tileWorkSub.text = "eat, drink, look after the base";
+
                 var w = plan.Warnings(kit);
-                warn.text = w.Count == 0 ? "<color=#6fdc8c>Plan looks good.</color>"
-                                         : string.Join("\n", w.Select(x => "<color=#ffb46e>! </color>" + x));
-            }
-            Refresh();
+                bool ok = w.Count == 0;
+                statBanner.style.backgroundColor = ok ? new Color(0.21f, 0.89f, 0.79f, 0.12f) : new Color(1f, 0.71f, 0.28f, 0.12f);
+                Ui.SetBorderColor(statBanner, ok ? new Color(0.21f, 0.89f, 0.79f, 0.45f) : new Color(1f, 0.71f, 0.28f, 0.55f));
+                statBannerText.style.color = ok ? new Color(0.21f, 0.89f, 0.79f) : new Color(1f, 0.81f, 0.54f);
+                statBannerText.text = ok ? "Your plan looks great!" : string.Join("\n", w.Select(x => "! " + x));
+            };
+
+            refresh();
             TestAdvance = _ => { scr.RemoveFromHierarchy(); StartCoroutine(FadeThen(() => onLaunch(plan))); };
         }
 
@@ -287,64 +791,108 @@ namespace Mohakash
         {
             hud = Ui.Box(root, "screen");
             markers = Ui.Box(hud, "screen");
+            gauges.Clear();
 
-            // Top bar: life-critical + time
+            // Top bar: life-critical + time matching hud_unpacked.html
             var top = Ui.Box(hud, "hud-top", "row");
             var tp = Ui.Panel(top, "row", "hud-card"); tp.style.paddingTop = 8; tp.style.paddingBottom = 8;
-            foreach (var (key, name) in new[] { ("power", "POWER PW (in/out)"), ("battery", "BATTERY"), ("o2", "CABIN O2"), ("water", "WATER"), ("food", "FOOD"), ("co2", "CO2"), ("sun", "SUN") })
+            // Wrist watch (Q): the habitat's status, readable from anywhere on the surface. Hidden until the astronaut checks it.
+            watch = Ui.Panel(hud, "hud-card", "col"); watch.pickingMode = PickingMode.Ignore;
+            watch.style.position = Position.Absolute; watch.style.bottom = 110; watch.style.left = Length.Percent(50);
+            watch.style.translate = new Translate(Length.Percent(-50), 0); watch.style.width = 600;
+            watch.style.borderTopLeftRadius = watch.style.borderTopRightRadius = watch.style.borderBottomLeftRadius = watch.style.borderBottomRightRadius = 40;
+            watch.style.backgroundColor = new Color(0.06f, 0.08f, 0.11f, 0.97f); watch.style.paddingLeft = watch.style.paddingRight = 28;
+            watch.style.borderTopWidth = watch.style.borderBottomWidth = watch.style.borderLeftWidth = watch.style.borderRightWidth = 4;
+            watch.style.borderTopColor = watch.style.borderBottomColor = watch.style.borderLeftColor = watch.style.borderRightColor = new Color(0.55f, 0.6f, 0.68f);
+            Ui.Text(watch, "WRIST WATCH  -  HOW IS THE BASE?", "card-title");
+            var ws = Ui.Box(watch, "row"); ws.style.flexWrap = Wrap.Wrap;
+            foreach (var (key, name) in new[] { ("power", "SOLAR POWER"), ("battery", "BATTERY"), ("o2", "AIR TANK"), ("water", "WATER"), ("food", "FOOD"), ("samples", "ROCK SAMPLES"), ("co2", "BAD AIR (CO2)"), ("sun", "SUNLIGHT"), ("rc", "ROBOT ROVER") })
             {
-                var s = Ui.Box(tp, "stat", "col");
+                var s = Ui.Box(ws, "stat", "col"); s.style.width = 160; s.style.marginTop = 6; s.style.marginBottom = 6;
                 Ui.Text(s, name, "stat-name");
                 stats[key] = Ui.Text(s, "-", "stat-value");
             }
-            var time = Ui.Box(tp, "stat", "col"); time.style.marginLeft = 20;
-            Ui.Text(time, "MISSION TIME", "stat-name");
+            Ui.Text(watch, "[Q] Hide watch", "tiny", "muted").style.marginTop = 4;
+            Ui.Show(watch, false);
+
+            var sunBox = Ui.Box(tp, "stat", "col");
+            Ui.Text(sunBox, "SUNLIGHT", "stat-name");
+            sunCountdownLbl = Ui.Text(sunBox, "--", "stat-value");
+            sunCountdownLbl.style.fontSize = 17; sunCountdownLbl.style.color = new Color(0.4f, 0.8f, 1f);
+
+            var time = Ui.Box(tp, "stat", "col"); time.style.marginLeft = 16;
+            Ui.Text(time, "TIME", "stat-name");
             clockText = Ui.Text(time, "", "stat-value");
             var speeds = Ui.Box(tp, "row"); speeds.style.marginLeft = 10;
-            foreach (var (label, val) in new[] { ("||", 0), ("1x", 1), ("2x", 2), ("4x", 4) })
+            foreach (var (label, val) in new[] { ("Pause", 0), ("1x", 1), ("2x", 2), ("4x", 4) })
             {
                 var b = Ui.Button(speeds, label, () => m.SetSpeed(val), "speed-btn");
                 b.userData = val; speedButtons.Add(b);
             }
 
-            // Left column: stacked cards (vitals, EVA suit when outside, my plan) so nothing overlaps
+            // Left column: stacked cards (ASTRONAUT vitals, EVA suit when outside, my plan)
             leftCol = Ui.Box(hud, "hud-left", "col");
             var left = Ui.Panel(leftCol, "hud-card");
-            Ui.Text(left, "ASTRONAUT", "card-title");
-            foreach (var (key, name) in new[] { ("health", "Health"), ("hunger", "Hunger"), ("hydration", "Hydration"), ("fatigue", "Fatigue"), ("dose", "Dose (game-mSv)"), ("suit", "Suit integrity"), ("evaTime", "Suit EVA time") })
-                VitalRow(left, key, name);
 
-            // EVA card (shown outside only)
+            var astroHead = Ui.Box(left, "row");
+            Ui.Text(astroHead, "YOU", "card-title");
+            Ui.Box(astroHead, "grow");
+            astroStatusBadge = Ui.Text(astroHead, "OK", "status-badge", "stable");
+
+            // every bar: full = good (Food = not hungry, Energy = not tired)
+            foreach (var (key, name) in new[] { ("health", "Health"), ("hunger", "Food"), ("hydration", "Water"), ("fatigue", "Energy") })
+                VitalRow(left, key, name);
+            if (Levels.Current.SpeStart >= 0) VitalRow(left, "dose", "Radiation");   // only levels with a solar storm
+
+            // spacesuit card (shown outside only)
             eva = Ui.Panel(leftCol, "hud-card");
-            Ui.Text(eva, "EVA  -  SUIT A", "card-title");
-            foreach (var (key, name) in new[] { ("sO2", "Suit O2"), ("sBatt", "Suit battery"), ("sCO2", "CO2 absorber") })
+            Ui.Text(eva, "SPACESUIT", "card-title");
+            foreach (var (key, name) in new[] { ("evaTime", "Air left"), ("suit", "Suit health") })
                 VitalRow(eva, key, name);
             evaWalk = Ui.Text(eva, "", "small", "muted");
 
-            // Right: link + objectives
+            // Rover card (shown while driving)
+            rover = Ui.Panel(leftCol, "hud-card");
+            Ui.Text(rover, "ROVER", "card-title");
+            VitalRow(rover, "rBatt", "Rover battery");
+            roverRange = Ui.Text(rover, "", "small", "muted");
+
+            // RC-1 handheld controller (V inside the habitat): live rover camera on its screen + battery
+            remote = Ui.Panel(hud, "hud-card", "col"); remote.pickingMode = PickingMode.Ignore;
+            remote.style.position = Position.Absolute; remote.style.bottom = 110; remote.style.left = Length.Percent(50);
+            remote.style.translate = new Translate(Length.Percent(-50), 0); remote.style.width = 520;
+            remote.style.borderTopLeftRadius = remote.style.borderTopRightRadius = remote.style.borderBottomLeftRadius = remote.style.borderBottomRightRadius = 28;
+            remote.style.backgroundColor = new Color(0.1f, 0.11f, 0.13f, 0.96f); remote.style.paddingLeft = remote.style.paddingRight = 20;
+            Ui.Text(remote, "RC-1 REMOTE ROVER CONTROLLER", "card-title");
+            var feed = Ui.Box(remote); feed.style.width = 480; feed.style.height = 300;
+            feed.style.backgroundImage = Background.FromRenderTexture(m.RemoteCam.targetTexture);
+            feed.style.borderTopWidth = feed.style.borderBottomWidth = feed.style.borderLeftWidth = feed.style.borderRightWidth = 3;
+            feed.style.borderTopColor = feed.style.borderBottomColor = feed.style.borderLeftColor = feed.style.borderRightColor = new Color(0.02f, 0.02f, 0.03f);
+            VitalRow(remote, "rcBatt", "Battery");
+            remoteInfo = Ui.Text(remote, "", "small", "muted");
+
+            // Right: Lunar day clock + Objectives panel
             var right = Ui.Panel(hud, "hud-right", "hud-card");
 
-            // Lunar day clock widget + label row
-            var clockRow = Ui.Box(right, "row"); clockRow.style.marginBottom = 8; clockRow.style.alignItems = Align.Center;
-            lunarWidget = new LunarDayWidget();
-            clockRow.Add(lunarWidget);
-            var clockInfo = Ui.Box(clockRow, "col"); clockInfo.style.marginLeft = 10;
-            Ui.Text(clockInfo, "LUNAR DAY", "card-title");
-            stats["lunarPhase"] = Ui.Text(clockInfo, "", "small");
-            stats["lunarNight"] = Ui.Text(clockInfo, "", "small", "cyan");
+            // what to do now: the first thing a player reads
+            hintBox = Ui.Box(right, "col");
+            Ui.Text(hintBox, "WHAT TO DO NOW", "card-title");
+            hintText = Ui.Text(hintBox, "", "small", "cyan"); hintText.style.fontSize = 19;
+            Ui.Box(hintBox, "card-divider");
 
-            var link = Ui.Box(right, "row"); linkDot = Ui.Dot(link, Severity.Warning);
-            stats["link"] = Ui.Text(link, "", "small", "muted");
-            Ui.Box(right, "card-divider");
-            Ui.Text(right, "OBJECTIVES", "card-title");
+            linkRow = Ui.Box(right, "row"); linkDot = Ui.Dot(linkRow, Severity.Warning);   // shown only when the Earth link is down
+            stats["link"] = Ui.Text(linkRow, "", "small", "muted");
+
+            // Objectives header with collapsible button
+            var objHead = Ui.Box(right, "row");
+            objHeaderLbl = Ui.Text(objHead, "GOALS", "card-title");
+            Ui.Box(objHead, "grow");
+            objToggleBtn = Ui.Button(objHead, "▲", ToggleObjectives, "btn-small");
+            objToggleBtn.style.paddingLeft = 6; objToggleBtn.style.paddingRight = 6;
+
+            objBody = Ui.Box(right, "col");
             var mo = m.Model;
-            AddObjective(right, () => mo.P1Seismometer, () => $"Seismometer 24 h  <color=#8aa0aa>{mo.SeisGoodHours:0.0}/24 h{(mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance ? ", TOO CLOSE" : "")}{Planned(Activity.Seismometer)}</color>");
-            AddObjective(right, () => mo.P2Radiation, () => $"Radiation reading  <color=#8aa0aa>{mo.RadReadings}/1{Planned(Activity.Radiation)}</color>");
-            AddObjective(right, () => mo.P3Survive, () => $"Survive 72 h  <color=#8aa0aa>{mo.Hour:0}/72 h</color>");
-            AddObjective(right, () => mo.S1Samples, () => $"Bonus: 2 rock samples  <color=#8aa0aa>{mo.SamplesDelivered}/2{Planned(Activity.Samples)}</color>", true);
-            Ui.Box(right, "card-divider");
-            hintText = Ui.Text(right, "", "small", "cyan");
-            Ui.Text(right, "H = controls", "tiny", "muted").style.marginTop = 4;
+            foreach (var o in Levels.Current.Objectives) { var ob = o; AddObjective(objBody, () => ob.Done(mo), () => ob.Label(mo), ob.Bonus); }
 
             // Prompt + alerts + banner
             var bottom = Ui.Box(hud, "hud-bottom");
@@ -353,12 +901,46 @@ namespace Mohakash
             alerts = Ui.Box(hud, "hud-alerts", "col");
             banner = Ui.Box(hud, "banner"); bannerText = Ui.Text(banner, "", "banner-box"); Ui.Show(banner, false);
 
+            // Bottom-left: key hints matching hud_unpacked.html
+            hudKeyHints = Ui.Box(hud, "row");
+            hudKeyHints.style.position = Position.Absolute;
+            hudKeyHints.style.left = 24; hudKeyHints.style.bottom = 14;
+            MakeHintItem(hudKeyHints, "Tab", "Base controls");
+            MakeHintItem(hudKeyHints, "O", "Goals");
+            MakeHintItem(hudKeyHints, "M", "Map");
+            MakeHintItem(hudKeyHints, "Q", "Base status");
+            MakeHintItem(hudKeyHints, "H", "Help");
+
+            if (GameInput.Touch)
+            {
+                TouchControls.Build(hud, k => k != UnityEngine.InputSystem.Key.C || (m.Remote != null && m.Remote.Driving));
+                Ui.Show(hudKeyHints, false);                       // keyboard hints mean nothing on a phone
+                alerts.style.bottom = 290;                         // above the move stick
+                prompt.style.maxWidth = Length.Percent(46);        // between the stick and the action buttons
+            }
+
             BuildSystemsPanel();
             BuildInventoryPanel();
             BuildStoresPanel();
             BuildPlanBoard();
             BuildTasksPanel();
             BuildPauseMenu();
+        }
+
+        static Label AddRoutineSlot(VisualElement parent, string title, Color col)
+        {
+            var s = Ui.Box(parent, "col");
+            s.style.marginRight = 20; s.style.marginLeft = 6;
+            var t = Ui.Text(s, title, "tiny"); t.style.color = col; t.style.unityFontStyleAndWeight = FontStyle.Bold;
+            var v = Ui.Text(s, "--", "tiny"); v.style.color = new Color(0.9f, 0.94f, 1f);
+            return v;
+        }
+
+        static void MakeHintItem(VisualElement parent, string key, string label)
+        {
+            var item = Ui.Box(parent, "row"); item.style.marginRight = 14; item.style.alignItems = Align.Center;
+            var k = Ui.Text(item, key, "key-cap"); k.style.fontSize = 12;
+            var l = Ui.Text(item, label, "tiny"); l.style.color = new Color(0.79f, 0.85f, 0.92f);
         }
 
         /// <summary>Objective suffix naming the block(s) the player planned for it.</summary>
@@ -389,60 +971,95 @@ namespace Mohakash
             if (hud == null || m.Model == null) return;
             var mo = m.Model;
 
-            stats["power"].text = $"{mo.Supply:0.0} / {mo.Demand:0.0}";
-            stats["power"].style.color = mo.Supply >= mo.Demand ? new Color(0.5f, 0.9f, 0.6f) : new Color(1f, 0.75f, 0.3f);
-            stats["battery"].text = mo.BatteryCap > 0 ? $"{mo.BatteryPct:0%} ({mo.Battery:0.0} PWh)" : "none";
-            Colour(stats["battery"], Ui.Level(mo.BatteryPct, 0.25f, 0.1f));
-            stats["o2"].text = $"{mo.CabinO2:0.00} kg"; Colour(stats["o2"], Ui.Level(mo.CabinO2, 2f, 1f));
-            stats["water"].text = $"{mo.Water:0.0} L"; Colour(stats["water"], Ui.Level(mo.Water, 3f, 1f));
-            stats["food"].text = $"{mo.Food / 2500f:0.0} days";
-            stats["co2"].text = $"{mo.CO2:0.00} kg"; Colour(stats["co2"], mo.CO2 > 0.6f ? Severity.Critical : mo.CO2 > 0.4f ? Severity.Warning : Severity.Good);
-            stats["sun"].text = LunarClock.IsNight(mo.Hour) ? "NIGHT" : mo.InShadow ? "SHADOW" : $"{mo.Sun:0%}";
-            clockText.text = $"h {mo.Hour:00.0} / 72";
+            if (GameInput.Objectives) ToggleObjectives();
 
-            // lunar day widget
-            lunarWidget?.Tick(mo.Hour);
-            float lunarPhase = LunarClock.Phase(mo.Hour);
-            bool night = LunarClock.IsNight(mo.Hour);
-            if (stats.TryGetValue("lunarPhase", out var lp))
-                lp.text = night ? "Night" : lunarPhase < 0.25f ? "Dawn" : lunarPhase < 0.45f ? "Morning" : lunarPhase < 0.55f ? "Noon" : "Afternoon";
-            if (stats.TryGetValue("lunarNight", out var ln))
-                ln.text = lunarWidget != null ? (night ? "▲ sunrise" : "▼ nightfall") : "";
+            if (astroStatusBadge != null)
+            {
+                bool critAstro = mo.Health < 30 || mo.Dose > 20 || (!mo.Inside && mo.EvaLeft < 0.6f);
+                bool warnAstro = mo.Health < 60 || mo.Hunger < 30 || mo.Hydration < 30 || mo.Fatigue > 60 || mo.Dose > 15;
+                astroStatusBadge.text = critAstro ? "DANGER" : warnAstro ? "CAREFUL" : "OK";
+                astroStatusBadge.RemoveFromClassList("stable");
+                astroStatusBadge.RemoveFromClassList("warn");
+                astroStatusBadge.RemoveFromClassList("crit");
+                astroStatusBadge.AddToClassList(critAstro ? "crit" : warnAstro ? "warn" : "stable");
+            }
+
+            stats["power"].text = mo.Supply >= mo.Demand ? "Enough" : "Not enough";
+            stats["power"].style.color = mo.Supply >= mo.Demand ? new Color(0.5f, 0.9f, 0.6f) : new Color(1f, 0.75f, 0.3f);
+            stats["battery"].text = mo.BatteryCap > 0 ? $"{mo.BatteryPct:0%}" : "none";
+            Colour(stats["battery"], Ui.Level(mo.BatteryPct, 0.25f, 0.1f));
+            stats["o2"].text = mo.CabinO2Cap > 0 ? $"{mo.CabinO2 / mo.CabinO2Cap:0%}" : "-"; Colour(stats["o2"], Ui.Level(mo.CabinO2, 2f, 1f));
+            stats["water"].text = $"{mo.Water:0} L"; Colour(stats["water"], Ui.Level(mo.Water, 3f, 1f));
+            stats["food"].text = $"{mo.Food / 2500f:0} days";
+            if (stats.TryGetValue("samples", out var sLbl))
+                sLbl.text = $"{mo.SamplesDelivered + mo.SamplesCarried:0.00} kg";
+            stats["co2"].text = mo.CO2 > 0.6f ? "DANGER" : mo.CO2 > 0.4f ? "High" : "OK"; Colour(stats["co2"], mo.CO2 > 0.6f ? Severity.Critical : mo.CO2 > 0.4f ? Severity.Warning : Severity.Good);
+            stats["sun"].text = mo.Sun < 0.05f ? "Dark" : $"{mo.Sun:0%}";
+
+            if (sunCountdownLbl != null)
+            {
+                float ds = MissionModel.DarkStart(mo.Hour), de = ds + MissionModel.ShadowLength;
+                sunCountdownLbl.text = mo.Hour < ds ? $"Dark in {Mathf.Ceil(ds - mo.Hour):0} h" : mo.Hour < de ? $"Dark: {Mathf.Ceil(de - mo.Hour):0} h left" : "Sunny";
+            }
+
+            clockText.text = $"Hour {Mathf.Floor(mo.Hour):0} of {MissionModel.DurationH:0}";
+
             foreach (var b in speedButtons) b.EnableInClassList("speed-on", (int)b.userData == m.Speed);
 
             SetStat("health", mo.Health / 100f, $"{mo.Health:0}%", Ui.Level(mo.Health, 60, 30));
-            SetStat("hunger", mo.Hunger / 100f, $"{mo.Hunger:0}%", Ui.Level(mo.Hunger, 40, 15));
+            SetStat("hunger", mo.Hunger / 100f, $"{mo.Hunger:0}%", Ui.Level(mo.Hunger, 40, 15));   // 100 = fed
             SetStat("hydration", mo.Hydration / 100f, $"{mo.Hydration:0}%", Ui.Level(mo.Hydration, 40, 15));
-            SetStat("fatigue", mo.Fatigue / 100f, $"{mo.Fatigue:0}%", mo.Fatigue > 70 ? Severity.Critical : mo.Fatigue > 40 ? Severity.Warning : Severity.Good);
-            SetStat("dose", mo.Dose / MissionModel.DoseAllowance, $"{mo.Dose:0.0} / 20", mo.Dose > 20 ? Severity.Critical : mo.Dose > 15 ? Severity.Warning : Severity.Good);
+            SetStat("fatigue", 1f - mo.Fatigue / 100f, $"{100f - mo.Fatigue:0}%", Ui.Level(100f - mo.Fatigue, 60, 30));   // shown as energy
+            SetStat("dose", mo.Dose / MissionModel.DoseAllowance, $"{mo.Dose / MissionModel.DoseAllowance:0%}", mo.Dose > 20 ? Severity.Critical : mo.Dose > 15 ? Severity.Warning : Severity.Good);
             SetStat("suit", mo.SuitIntegrity / 100f, $"{mo.SuitIntegrity:0}%", Ui.Level(mo.SuitIntegrity, 60, 30));
             SetStat("evaTime", mo.EvaLeft / MissionModel.SuitCO2Max, $"{mo.EvaLeft:0.0} h", Ui.Level(mo.EvaLeft, 1.5f, 0.6f));
-            SetStat("sO2", mo.SuitO2 / MissionModel.SuitO2Max, $"{mo.SuitO2:0.0} h", Ui.Level(mo.SuitO2, 1f, 0.5f));
-            SetStat("sBatt", mo.SuitBatt / MissionModel.SuitBattMax, $"{mo.SuitBatt:0.0} h", Ui.Level(mo.SuitBatt, 1f, 0.5f));
-            SetStat("sCO2", mo.SuitCO2 / MissionModel.SuitCO2Max, $"{mo.SuitCO2:0.0} h", Ui.Level(mo.SuitCO2, 1f, 0.5f));
 
-            stats["link"].text = !m.Kit.Has("COM") ? "No comms console: no Earth or Gateway link"
-                : mo.Net.Connected ? "Earth + Gateway link OK (~1.3 s delay)"
-                : mo.Load("COM")?.Powered != true ? "COMMS DOWN: no power to the COM terminal"
-                : "COMMS DOWN: fix the antenna at the comms workstation";
+            Ui.Show(linkRow, m.Kit.Has("COM") && !mo.Net.Connected);
+            stats["link"].text = mo.Load("COM")?.Powered != true ? "No call to Earth: the radio has no power" : "No call to Earth: fix the antenna at the radio desk";
             Colour(stats["link"], mo.Net.Connected ? Severity.Info : Severity.Warning);
             Ui.SetDot(linkDot, mo.Net.Connected ? Severity.Good : Severity.Warning);
 
+            int doneCount = 0;
             foreach (var o in objectives)
             {
                 bool done = o.done();
+                if (done) doneCount++;
                 o.label.text = o.text();
                 Ui.SetDot(o.dot, done ? Severity.Good : Severity.Info);
             }
-            hintText.text = Game.Hints ? "Next: " + NextHint(mo) : "";
+            if (objHeaderLbl != null) objHeaderLbl.text = $"GOALS  {doneCount} of {objectives.Count} done";
+
+            Ui.Show(hintBox, Game.Hints);
+            if (Game.Hints) hintText.text = GameInput.Words(NextHint(mo));
 
             Ui.Show(eva, !mo.Inside);
             if (!mo.Inside)
             {
                 float need = m.HoursToWalkBack, left = mo.EvaLeft - 0.5f;
                 bool ok = need < left;
-                evaWalk.text = $"Airlock {m.DistanceToHab:0} m  -  walk back ~{need:0.0} h  -  usable suit time {Mathf.Max(0, left):0.0} h";
+                evaWalk.text = ok ? $"Home (airlock) is {m.DistanceToHab:0} m away" : $"Home is {m.DistanceToHab:0} m away. Go back now!";
                 evaWalk.style.color = ok ? (need > left * 0.7f ? new Color(1f, 0.8f, 0.3f) : new Color(0.6f, 0.95f, 0.7f)) : new Color(1f, 0.4f, 0.35f);
+            }
+
+            var rc = m.Remote; float rcPct = mo.RemoteBattery / 100f;
+            if (rc != null) {
+            stats["rc"].text = $"{mo.RemoteBattery:0}%{(mo.RemoteDocked ? " charging" : "")}"; Colour(stats["rc"], Ui.Level(rcPct, 0.4f, 0.15f));
+            Ui.Show(remote, rc.Driving);
+            Ui.Show(watch, watchOn && !rc.Driving);
+            if (rc.Driving)
+            {
+                SetStat("rcBatt", rcPct, $"{mo.RemoteBattery:0}%", Ui.Level(rcPct, 0.4f, 0.15f));
+                float far = new Vector2(rc.transform.position.x - m.World.Hab.position.x, rc.transform.position.z - m.World.Hab.position.z).magnitude;
+                remoteInfo.text = GameInput.Words($"{far:0} m from home. Can drive about {mo.RemoteBattery / MissionModel.RemotePctPerMeter:0} m more.\n[C] change camera   [V] stop driving");
+            }
+            }
+
+            bool driving = m.Rover != null && m.Rover.Driving;
+            Ui.Show(rover, driving);
+            if (driving)
+            {
+                SetStat("rBatt", mo.RoverBattery / mo.RoverCap, $"{mo.RoverBattery / mo.RoverCap:0%}", Ui.Level(mo.RoverBattery / mo.RoverCap, 0.4f, 0.15f));
+                roverRange.text = $"Can drive about {mo.RoverBattery / 0.12f * 10f:0} m more. Park at the garage to charge.";   // 0.12 PWh per 10 m (Loadout ROV-SC)
             }
 
             UpdatePrompt(mo);
@@ -455,9 +1072,9 @@ namespace Mohakash
 
             bool crit = mo.O2ZeroHours > 0 || (!mo.Inside && mo.EvaLeft < 0.5f) || (mo.SpeActive && !mo.Inside);
             Ui.Show(banner, crit && !mo.Ended);
-            if (crit) bannerText.text = mo.O2ZeroHours > 0 ? $"CABIN O2 EMPTY - failure in {2f - mo.O2ZeroHours:0.0} h. Switch the OGS on / get power to it!"
-                                     : mo.SpeActive && !mo.Inside ? "SOLAR PARTICLE EVENT - get inside the habitat!"
-                                     : "SUIT RESERVE - return to the airlock now!";
+            if (crit) bannerText.text = mo.O2ZeroHours > 0 ? $"THE BASE IS OUT OF AIR! Press Tab and turn on the oxygen maker. ({2f - mo.O2ZeroHours:0.0} h left)"
+                                     : mo.SpeActive && !mo.Inside ? "SOLAR STORM! Get inside the base now!"
+                                     : "YOUR SUIT IS ALMOST OUT OF AIR! Go back to the airlock now!";
             Ui.Show(hud, m.Current == Mission1.Phase.Operations);
         }
 
@@ -487,17 +1104,20 @@ namespace Mohakash
                 if (mo.SeisDeployed)
                 {
                     var step = tk.Prompt(Spot.Seis, m.Player != null ? m.Player.transform.eulerAngles.y : 0f);
-                    if (step != null) return "Walk to the deployed seismometer and press E: " + step;
+                    if (step != null) return "Walk to the deployed quake sensor and press E: " + step;
                 }
             }
             if (mo.Inside && mo.EvaLeft < 0.6f) return "Suit is refilling. Speed up time (2/3) or sleep at the bunk, then use the airlock door.";
-            if (mo.Inside && mo.SamplesDelivered > m.SamplesAnalyzed) return "Analyse your samples at the lab bench (cyan marker).";
-            if (m.Kit.Has("SEIS") && !mo.SeisDeployed && !mo.SeisCarried) return "Pick up the seismometer crate next to the airlock (orange marker).";
-            if (mo.SeisCarried) return "Carry it beyond the orange 80 m ring, then press E to deploy. The rover (R) is faster.";
-            if (mo.SeisDeployed && mo.SeisDistance < MissionModel.SeisMinDistance) return "Seismometer too close to the base. Pick it up and move it past the orange ring.";
-            if (mo.RadReadings == 0 && m.Kit.Has("RAD")) return "Log a radiation reading at the RAD post beside the habitat.";
-            if (mo.SamplesDelivered + mo.SamplesCarried < 2 && m.Kit.Has("SAMP")) return "Optional: collect 2 regolith samples (cyan beacons), then bring them inside.";
-            if (mo.SamplesCarried > 0) return "Bring the samples into the habitat to deliver them.";
+            if (mo.Inside && mo.SamplesDelivered > m.SamplesAnalyzed) return "Look at your rocks at the lab bench (cyan marker).";
+            var lv = Levels.Current;
+            if (lv.SeisGoal && m.Kit.Has("SEIS") && !mo.SeisDeployed && !mo.SeisCarried) return "Pick up the quake sensor box next to the airlock (orange marker).";
+            if (mo.SeisCarried) return lv.SeisSite != null ? "Carry it to the marked site (orange beacon), step inside the circle and press E. The rover (R) is faster."
+                                                           : "Carry it beyond the orange 80 m ring, then press E to deploy. The rover (R) is faster.";
+            if (mo.SeisDeployed && !mo.SeisAtSite) return lv.SeisSite != null ? "Quake sensor is not at the marked site. Pick it up and set it down inside the orange circle."
+                                                                               : "Quake sensor too close to the base. Pick it up and move it past the orange ring.";
+            if (lv.RadGoal && mo.RadReadings == 0 && m.Kit.Has("RAD")) return "Log a radiation reading at the RAD post beside the habitat.";
+            if (lv.N <= 2 && mo.SamplesDelivered + mo.SamplesCarried < 2 && m.Kit.Has("SAMP")) return "Optional: collect 2 rocks (cyan beacons), then bring them inside.";
+            if (mo.SamplesCarried > 0) return "Bring the rocks into the habitat to deliver them.";
             if (guided)
             {
                 // any procedure still waiting on the player
@@ -512,33 +1132,48 @@ namespace Mohakash
             if (mo.Hunger < 30f) return mo.Inside ? "You are hungry: eat at the galley (E)." : "You are hungry: head back inside to eat.";
             if (mo.Fatigue > 70f && mo.Inside) return "You are tired: sleep at the bunk (E) or eat at the galley.";
             if (!mo.Inside) return "Head back to the airlock. Inside you can speed up time and manage power (Tab).";
-            if (mo.Hour < MissionModel.ShadowStart) return "Before hour 40: charge the battery. Open Systems (Tab) to switch loads off for the shadow window.";
-            return "Keep the base alive until hour 72. Watch the battery and cabin O2.";
+            var broken = mo.Broken.Keys.FirstOrDefault();
+            if (broken != null) return $"{mo.Load(broken)?.Name} is broken: open the power panel (Tab) and press REPAIR.";
+            var todo = Levels.Current.Objectives.FirstOrDefault(o => !o.Bonus && !o.Done(mo) && !o.Label(mo).StartsWith("Stay safe") && !o.Label(mo).StartsWith("Keep the air"));
+            if (todo != null) return "Next goal: " + System.Text.RegularExpressions.Regex.Replace(todo.Label(mo), "<.*?>", "").Trim();
+            float ds = MissionModel.DarkStart(mo.Hour);
+            if (mo.Hour < ds) return $"It gets dark at hour {ds:0}. Press Tab and switch off things you don't need, so the battery lasts the night.";
+            return $"Keep the base running until hour {MissionModel.DurationH:0}. Watch the battery and the air tank.";
         }
 
         void UpdatePrompt(MissionModel mo)
         {
             string text = null;
-            if (m.Rover != null && m.Rover.Driving) text = $"<b>WASD</b> drive (Shift = full speed)   <b>R</b> get out   -   rover battery {mo.RoverBattery:0.0}/{mo.RoverCap:0} PWh";
+            if (m.Rover != null && m.Rover.Driving) text = $"<b>WASD</b> drive (Shift = faster)   <b>R</b> get out";
             else if (!m.SystemsOpen)
             {
                 if (m.Focus != null) text = $"<b>E</b>  {m.Focus.Prompt()}";
-                if (!mo.Inside && m.NearRover) text = (text != null ? text + "     " : "") + $"<b>R</b>  Board rover ({mo.RoverBattery:0.0} PWh)";
+                if (!mo.Inside && m.NearRover) text = (text != null ? text + "     " : "") + $"<b>R</b>  Get in the rover";
             }
             if (text == null && mo.SeisCarried && !mo.Inside && m.Focus == null && !(m.Rover != null && m.Rover.Driving))
             {
                 var p = m.Player.transform.position; p.y = 0; var h = m.World.Hab.position; h.y = 0;
                 float d = Vector3.Distance(p, h);
-                text = d >= MissionModel.SeisMinDistance ? $"<b>E</b>  Deploy seismometer here ({d:0} m from habitat - quiet site)"
-                                                         : $"<b>E</b>  Deploy seismometer here ({d:0} m - TOO CLOSE, need 80 m)";
+                if (Levels.Current.SeisSite is Vector2 site)
+                {
+                    float ds = Vector2.Distance(new Vector2(p.x, p.z), site);
+                    text = ds <= LevelDef.SeisSiteRadius ? "<b>E</b>  Deploy quake sensor here (inside the marked site)"
+                                                         : $"<b>E</b>  Deploy quake sensor here ({ds:0} m from the marked site - follow the orange beacon)";
+                }
+                else
+                    text = d >= MissionModel.SeisMinDistance ? $"<b>E</b>  Deploy quake sensor here ({d:0} m from habitat - quiet site)"
+                                                             : $"<b>E</b>  Deploy quake sensor here ({d:0} m - TOO CLOSE, need {MissionModel.SeisMinDistance:0} m)";
             }
             Ui.Show(prompt, text != null);
+            if (text != null && GameInput.Touch)
+                text = GameInput.Words(text).Replace("<b>E</b>", "<b>USE</b>").Replace("<b>R</b>", "<b>ROVER</b>").Replace("<b>WASD</b> drive (Shift = faster)", "<b>Stick</b> drive (RUN = faster)");
             if (text != null) promptText.text = text.Replace("<b>", "<color=#FF963C><b>").Replace("</b>", "</b></color>");
         }
 
         void SetStat(string key, float t, string text, Severity s)
         {
-            var (fill, val) = bars[key];
+            if (!bars.TryGetValue(key, out var b)) return;   // row not on this level / card
+            var (fill, val) = b;
             Ui.SetBar(fill, t, s); val.text = text;
         }
 
@@ -571,6 +1206,19 @@ namespace Mohakash
                 float d = Vector3.Distance(m.ActivePosition, i.transform.position);
                 ((Label)v[0]).text = next ? $"NEXT: {i.Label}  {d:0} m" : $"{i.Label}  {d:0} m";
             }
+            foreach (var (pos, text, level, v) in gauges)
+            {
+                var p = pos();
+                var sp = cam.WorldToViewportPoint(p);
+                bool vis = show && !m.Model.Inside && sp.z > 0 && Vector3.Distance(m.ActivePosition, p) < GaugeRange;
+                Ui.Show(v, vis);
+                if (!vis) continue;
+                var panelSize = markers.layout.size;
+                v.style.left = sp.x * panelSize.x; v.style.top = (1f - sp.y) * panelSize.y;
+                var l = (Label)v[0]; l.text = text();
+                float t = level();
+                Colour(l, t < 0.15f ? Severity.Critical : t < 0.4f ? Severity.Warning : Severity.Good);
+            }
             foreach (var dead in markerViews.Keys.Where(k => k == null || !Interactable.All.Contains(k)).ToList())
             {
                 markerViews[dead].RemoveFromHierarchy(); markerViews.Remove(dead);
@@ -580,6 +1228,7 @@ namespace Mohakash
         public void Toast(string text, Severity s)
         {
             if (alerts == null) return;
+            text = GameInput.Words(text);
             var a = Ui.Box(alerts, "alert", "row");
             a.AddToClassList(s == Severity.Critical ? "crit-bg" : s == Severity.Warning ? "warn-bg" : s == Severity.Good ? "good-bg" : "");
             Ui.Dot(a, s);
@@ -602,24 +1251,26 @@ namespace Mohakash
             systems = Ui.Box(root, "screen", "center");
             var p = Ui.Panel(systems); p.style.width = 1060;
             var head = Ui.Box(p, "row");
-            Ui.Text(head, "OUTPOST SYSTEMS  -  POWER BUS", "h1"); Ui.Box(head, "grow");
-            gatewayBtn = Ui.Button(head, "Call Gateway (resupply)", () => { Ui.Show(gateway, !Ui.Visible(gateway)); gateway.BringToFront(); });
+            Ui.Text(head, "BASE CONTROLS", "h1"); Ui.Box(head, "grow");
+            gatewayBtn = Ui.Button(head, "Call for supplies", () => { Ui.Show(gateway, !Ui.Visible(gateway)); gateway.BringToFront(); });
             Ui.Button(head, "Close (Tab)", m.ToggleSystems);
             sysSummary = Ui.Text(p, "", "text");
             sysShadow = Ui.Text(p, "", "text", "accent");
-            Ui.Text(p, "When supply + battery cannot cover the load, the lowest priority is shed first: 6 rover charging -> 4 science -> 3 comms -> 2 suit -> 1 life support.", "small", "muted");
+            Ui.Text(p, "Every machine uses power. If there is not enough, the least important ones turn off first.", "small", "muted");
 
             var hdr = Ui.Box(p, "table-row");
-            Ui.Text(hdr, "", "dot"); Ui.Text(hdr, "Load", "cell-name", "muted"); Ui.Text(hdr, "PW", "cell", "muted"); Ui.Text(hdr, "Priority", "cell", "muted"); Ui.Text(hdr, "State", "cell-wide"); Ui.Text(hdr, "Switch", "cell", "muted");
+            Ui.Text(hdr, "", "dot"); Ui.Text(hdr, "Machine", "cell-name", "muted"); Ui.Text(hdr, "Uses", "cell", "muted"); Ui.Text(hdr, "What it is doing", "cell-wide", "muted"); Ui.Text(hdr, "Switch", "cell", "muted");
             foreach (var l in m.Model.Loads)
             {
                 var r = Ui.Box(p, "table-row");
                 var dot = Ui.Dot(r, Severity.Good);
                 Ui.Text(r, l.Name, "cell-name");
-                Ui.Text(r, l.Pw.ToString("0.00"), "cell");
-                Ui.Text(r, l.Priority.ToString(), "cell");
+                Ui.Text(r, l.Pw >= 0.8f ? "a lot" : l.Pw >= 0.3f ? "some" : "a little", "cell");
                 var st = Ui.Text(r, "", "cell-wide");
                 loadStates.Add((st, l)); loadDots.Add((dot, l));
+                var rl = l;
+                var rep = Ui.Button(r, "FIX", () => { var msg = m.Model.StartRepair(rl.Id); if (msg != null) Toast(msg, Severity.Info); }, "btn-small", "btn-primary");
+                rep.style.width = 100; repairButtons.Add((rep, l)); Ui.Show(rep, false);
                 if (l.Id == "OGS")
                 {
                     ogsBtn = Ui.Button(r, "", () => { m.Model.Ogs = (OgsMode)(((int)m.Model.Ogs + 1) % 3); }, "btn-small");
@@ -633,11 +1284,25 @@ namespace Mohakash
                     loadButtons.Add((b, l));
                 }
                 else { var t = Ui.Text(r, "always on", "cell", "muted"); t.style.width = 110; }
+                var help = Ui.Text(p, MachineHelp(l.Id), "tiny", "muted"); help.style.marginLeft = 34; help.style.marginTop = -4; help.style.marginBottom = 4;
             }
-            Ui.Text(p, "OGS modes: OFF / AUTO (runs when battery > 60% and there is sun) / ON. Electrolysis: 1.0 PW + 0.11 L water per hour -> 0.10 kg O2/h.", "small", "muted").style.marginTop = 8;
+            Ui.Text(p, "Oxygen maker: OFF, AUTO (turns on by itself when there is spare power) or ON." + (Levels.Current.Faults.Length > 0 ? $" Broken machine? Press FIX. With spare parts it is fixed right away, otherwise it takes {MissionModel.RepairHours:0} hours." : ""), "small", "muted").style.marginTop = 8;
             Ui.Show(systems, false);
             BuildGatewayPanel();
         }
+
+        static string MachineHelp(string id) => id switch
+        {
+            "HAB" => "Keeps the base warm and bright.",
+            "SCR" => "Cleans the bad air (CO2) you breathe out.",
+            "OGS" => Levels.Current.Mars ? "Makes fresh air out of Mars air." : "Makes fresh air out of water.",
+            "SUI" => "Fills your spacesuit with air.",
+            "COM" => "Lets you talk to Earth and call for supplies.",
+            "RAD" => "Measures space radiation.",
+            "SEIS" => "Listens for quakes.",
+            "GAR" => "Charges the rover when it is parked.",
+            _ => "",
+        };
 
         // ================================================================== Gateway resupply (from the systems panel)
 
@@ -649,10 +1314,10 @@ namespace Mohakash
             gateway = Ui.Box(root, "screen", "center");
             var p = Ui.Panel(gateway); p.style.width = 820;
             var head = Ui.Box(p, "row");
-            Ui.Text(head, "CALL LUNAR GATEWAY", "h1"); Ui.Box(head, "grow");
+            Ui.Text(head, "CALL FOR SUPPLIES", "h1"); Ui.Box(head, "grow");
             Ui.Button(head, "Close", () => Ui.Show(gateway, false));
-            Ui.Text(p, $"Forgot something, or running low? The Gateway station in lunar orbit can send a cargo drone. It lands {Resupply.DelayH:0} h after your call " +
-                       $"and carries up to {Resupply.DroneKg:0} kg. You only get {Resupply.MaxCalls} calls, and each one lowers your self-reliance score.", "text-small");
+            Ui.Text(p, $"Running low? A space station can send a drone with supplies. It lands {Resupply.DelayH:0} hours after you call " +
+                       $"and carries up to {Resupply.DroneKg:0} kg. You can only call {Resupply.MaxCalls} times, and each call lowers your score a little.", "text-small");
             foreach (var it in Resupply.Items)
             {
                 var r = Ui.Box(p, "row");
@@ -664,11 +1329,11 @@ namespace Mohakash
             gatewayInfo = Ui.Text(p, "", "text-small"); gatewayInfo.style.marginTop = 8;
             gatewayMsg = Ui.Text(p, "", "small", "accent");
             var row = Ui.Box(p, "row"); row.style.justifyContent = Justify.FlexEnd; row.style.marginTop = 8;
-            gatewaySend = Ui.Button(row, "Send request", () =>
+            gatewaySend = Ui.Button(row, "Send the drone", () =>
             {
                 var cart = gatewayRows.Where(g => g.t.value).Select(g => g.item).ToList();
                 var why = m.Model.Gateway.Request(m.Model, cart);
-                gatewayMsg.text = why ?? $"Drone on its way: arrives at hour {m.Model.Hour + Resupply.DelayH:0}.";
+                gatewayMsg.text = why ?? $"The drone is on its way! It lands at hour {m.Model.Hour + Resupply.DelayH:0}.";
                 if (why == null) foreach (var g in gatewayRows) g.t.SetValueWithoutNotify(false);
                 RefreshGateway();
             }, "btn-primary");
@@ -687,9 +1352,9 @@ namespace Mohakash
                 t.SetEnabled(blocked == null || t.value);
             }
             string pending = gw.Pending.Count == 0 ? "none" : string.Join("; ", gw.Pending.Select(p => $"hour {p.due:0}: {string.Join(", ", p.items.Select(i => i.Name))}"));
-            gatewayInfo.text = $"Drone load {kg:0} / {Resupply.DroneKg:0} kg     Calls left {Resupply.MaxCalls - gw.Calls} / {Resupply.MaxCalls}\nOn the way: {pending}";
+            gatewayInfo.text = $"Drone load {kg:0} of {Resupply.DroneKg:0} kg     Calls left: {Resupply.MaxCalls - gw.Calls}\nOn the way: {pending}";
             gatewaySend.SetEnabled(mo.Net.Connected && kg > 0f && kg <= Resupply.DroneKg && gw.Calls < Resupply.MaxCalls);
-            if (!mo.Net.Connected) gatewayInfo.text = "COMMS DOWN: fix the antenna and establish the link at the comms workstation to reach Gateway.\n" + gatewayInfo.text;
+            if (!mo.Net.Connected) gatewayInfo.text = "The radio is not working. Fix the antenna at the radio desk first.\n" + gatewayInfo.text;
         }
 
         void UpdateSystems()
@@ -698,15 +1363,21 @@ namespace Mohakash
             Ui.Show(systems, open);
             if (!open) { Ui.Show(gateway, false); return; }
             if (Ui.Visible(gateway)) RefreshGateway();
-            gatewayBtn.text = m.Model.Gateway.Pending.Count > 0 ? "Gateway: drone on its way" : "Call Gateway (resupply)";
+            gatewayBtn.text = m.Model.Gateway.Pending.Count > 0 ? "Supply drone on its way" : "Call for supplies";
             var mo = m.Model;
-            sysSummary.text = $"Solar {mo.SolarPeak:0.0} PW peak x sun {mo.Sun:0%} x (1 - dust {mo.Dust:0%}) = {mo.Supply:0.00} PW   |   Load {mo.Demand:0.00} PW   |   Battery {mo.Battery:0.0}/{mo.BatteryCap:0} PWh";
-            float toShadow = MissionModel.ShadowStart - mo.Hour;
-            sysShadow.text = toShadow > 0
-                ? $"Shadow window in {toShadow:0.0} h: 6 h at your current base load needs ~{mo.ShadowEnergyNeeded:0.0} PWh (battery max {mo.BatteryCap:0} PWh)."
-                : mo.InShadow ? $"IN SHADOW: {MissionModel.ShadowEnd - mo.Hour:0.0} h left. Running on battery only." : "Shadow window passed.";
+            bool filling = mo.Supply >= mo.Demand;
+            sysSummary.text = $"Battery {mo.BatteryPct:0%}  -  " + (mo.Sun < 0.05f ? "No sun right now: the base runs on the battery." : filling ? "The solar panels make more than the base uses: the battery is filling up." : "The base uses more than the solar panels make: the battery is going down.")
+                            + (mo.Dust > 0.1f ? $"  Dust on the panels: {mo.Dust:0%}." : "");
+            sysSummary.style.color = mo.Sun >= 0.05f && filling ? new Color(0.5f, 0.9f, 0.6f) : new Color(1f, 0.8f, 0.4f);
+            float dStart = MissionModel.DarkStart(mo.Hour), toShadow = dStart - mo.Hour;
+            bool enough = mo.Battery >= mo.ShadowEnergyNeeded;
+            sysShadow.text = mo.InShadow ? $"It is dark: {Mathf.Ceil(dStart + MissionModel.ShadowLength - mo.Hour):0} hours left. Only the battery works now."
+                : toShadow > 0 && dStart < MissionModel.DurationH
+                ? $"It gets dark in {Mathf.Ceil(toShadow):0} hours, for {MissionModel.ShadowLength:0} hours. " + (enough ? "The battery has enough for now." : "The battery is NOT full enough yet. Switch off what you don't need!")
+                : "";
+            foreach (var (b, l) in repairButtons) Ui.Show(b, mo.IsBroken(l.Id));
             foreach (var (lbl, l) in loadStates) lbl.text = l.Powered ? "Running" : (string.IsNullOrEmpty(l.Why) ? "Off" : l.Why);
-            foreach (var (dot, l) in loadDots) Ui.SetDot(dot, l.Powered ? Severity.Good : (l.Why != null && l.Why.StartsWith("SHED")) ? Severity.Critical : Severity.Warning);
+            foreach (var (dot, l) in loadDots) Ui.SetDot(dot, l.Powered ? Severity.Good : (l.Why != null && (l.Why.StartsWith("NO POWER") || l.Why.StartsWith("BROKEN"))) ? Severity.Critical : Severity.Warning);
             foreach (var (b, l) in loadButtons) { b.text = l.Enabled ? "ON" : "OFF"; b.EnableInClassList("btn-on", l.Enabled); b.EnableInClassList("btn-off", !l.Enabled); }
             if (ogsBtn != null) { ogsBtn.text = mo.Ogs.ToString().ToUpper(); ogsBtn.EnableInClassList("btn-on", mo.Ogs != OgsMode.Off); ogsBtn.EnableInClassList("btn-off", mo.Ogs == OgsMode.Off); }
         }
@@ -757,6 +1428,9 @@ namespace Mohakash
             Ui.Show(inventory, false);
         }
 
+        bool watchOn;
+        public void ToggleWatch() => watchOn = !watchOn;
+
         void UpdateInventory()
         {
             bool open = m.InventoryOpen && !m.Model.Ended;
@@ -797,13 +1471,13 @@ namespace Mohakash
             planBoard = Ui.Box(root, "screen", "center", "dim");
             var p = Ui.Panel(planBoard); p.style.width = 1500; p.style.maxHeight = Length.Percent(92);
             var head = Ui.Box(p, "row");
-            Ui.Text(head, "MISSION PLAN", "h1"); Ui.Box(head, "grow");
+            Ui.Text(head, "MY PLAN", "h1"); Ui.Box(head, "grow");
             Ui.Button(head, "Close (J / Esc)", m.TogglePlan);
             var cols = Ui.Box(p, "row"); cols.style.alignItems = Align.FlexStart;
 
             // left: the 72 h schedule; blocks that have not started can still be changed
             var left = Ui.Box(cols, "col"); left.style.width = 820; left.style.marginRight = 24;
-            Ui.Text(left, "SCHEDULE  (future blocks can be changed)", "section");
+            Ui.Text(left, "WHEN AND WHAT  (you can still change the later ones)", "section");
             planActs = MissionPlan.Available(m.Kit);
             var names = planActs.Select(MissionPlan.Name).ToList();
             for (int i = 0; i < MissionPlan.Blocks; i++)
@@ -822,7 +1496,7 @@ namespace Mohakash
 
             // right: every task and step, ticked off, with where it is done
             var right = Ui.Box(cols, "col", "grow");
-            Ui.Text(right, "TASKS AND STEPS", "section");
+            Ui.Text(right, "STEPS", "section");
             var scroll = Ui.Add(right, new ScrollView()); scroll.style.maxHeight = 720;
             planTasks = Ui.Text(scroll, "", "small"); planTasks.enableRichText = true;
             Ui.Show(planBoard, false);
@@ -842,14 +1516,14 @@ namespace Mohakash
                 d.SetEnabled(b > now);
                 d.SetValueWithoutNotify(MissionPlan.Name(plan.At[b]));
                 bool done = plan.Done(b, mo);
-                var (txt, col) = b > now ? ("upcoming", new Color(0.6f, 0.66f, 0.75f))
+                var (txt, col) = b > now ? ("later", new Color(0.6f, 0.66f, 0.75f))
                     : done ? ("done", new Color(0.44f, 0.86f, 0.55f))
                     : b == now ? ("NOW", new Color(1f, 0.7f, 0.43f))
                     : plan.At[b] == Activity.Sleep ? ("missed", new Color(0.6f, 0.66f, 0.75f)) : ("overdue", new Color(1f, 0.48f, 0.48f));
                 st.text = txt; st.style.color = col;
             }
             var w = plan.Warnings(m.Kit);
-            planWarn.text = w.Count == 0 ? "<color=#6fdc8c>Plan looks good.</color>" : string.Join("\n", w.Select(x => "<color=#ffb46e>! </color>" + x));
+            planWarn.text = w.Count == 0 ? "<color=#6fdc8c>Your plan looks great!</color>" : string.Join("\n", w.Select(x => "<color=#ffb46e>! </color>" + x));
 
             var sb = new System.Text.StringBuilder();
             var t = mo.Tasks;
@@ -903,10 +1577,10 @@ namespace Mohakash
             Row("Cabin oxygen", x => ($"{x.CabinO2:0.0} / {x.CabinO2Cap:0} kg", $"made {x.O2Produced:0.0} kg, used {x.O2Consumed:0.0} kg, vented {x.O2Vented:0.0} kg", Lvl(x.CabinO2 < 1f, x.CabinO2 < 2f)));
             Row("CO2 scrubber cartridges", x => !x.Kit.Has("SCR") ? ("none", "no CO2 scrubber packed", Severity.Critical)
                 : ($"{x.CartridgeKg:0.0} kg left", "about 1 kg of CO2 per crew-day", Lvl(x.CartridgeKg < 0.5f, x.CartridgeKg < 1f)));
-            Row("Battery", x => ($"{x.Battery:0.0} / {x.BatteryCap:0} PWh", $"solar {x.Supply:0.0} in, {x.Demand:0.0} out", Lvl(x.BatteryPct < 0.15f, x.BatteryPct < 0.35f)));
+            Row("Battery", x => ($"{x.BatteryPct:0%}", x.Supply >= x.Demand ? "filling up" : "going down", Lvl(x.BatteryPct < 0.15f, x.BatteryPct < 0.35f)));
             Row("Spare parts kits", x => ($"{x.Spares}", $"suit integrity {x.SuitIntegrity:0}% (one kit = +50%)", Lvl(false, x.Spares == 0 && x.SuitIntegrity < 60f)));
             Row("Rock samples", x => ($"{x.SamplesDelivered} / {x.SampleCapacity}", $"stored in the habitat, {m.SamplesAnalyzed} analysed", Severity.Good));
-            Row("Rover battery", x => x.RoverCap <= 0f ? ("no rover", "", Severity.Info) : ($"{x.RoverBattery:0.0} / {x.RoverCap:0} PWh", "charges in the garage zone", Lvl(x.RoverBattery < 0.5f, x.RoverBattery < 1.5f)));
+            Row("Rover battery", x => x.RoverCap <= 0f ? ("no rover", "", Severity.Info) : ($"{x.RoverBattery / x.RoverCap:0%}", "charges at the garage", Lvl(x.RoverBattery < 0.5f, x.RoverBattery < 1.5f)));
             Row("Carried by you", x => ($"{x.Inv.Slots.Count} / {x.Inv.Capacity} slots", $"{x.Inv.Kg:0.#} / {Inventory.MaxKg:0} kg{(x.Inv.HasBag ? ", EVA bag" : ", pockets only")}", Severity.Info));
             Row("Gateway resupply", x => ($"{Resupply.MaxCalls - x.Gateway.Calls} calls left",
                 x.Gateway.Pending.Count == 0 ? (x.Net.Connected ? "no drone on the way" : "comms down: fix the antenna first")
@@ -1062,6 +1736,7 @@ namespace Mohakash
             Ui.Text(p, "PAUSED", "h1");
             Ui.Button(p, "Resume", () => m.SetPaused(false), "btn-primary");
             Ui.Button(p, "Controls", ToggleControls);
+            Ui.Button(p, "Lunar Survival Intelligence", () => LunarIntelligenceUi.Show(root));
             SettingsUi.Build(p);
             Ui.Button(p, "Restart mission", m.Retry);
             Ui.Button(p, "Main menu", m.ToMenu);
@@ -1078,59 +1753,55 @@ namespace Mohakash
             var scr = Ui.Box(root, "screen", "center", "dim"); scr.pickingMode = PickingMode.Position;
             var p = Ui.Panel(scr); p.style.width = 1600; p.style.height = 960;
             var head = Ui.Box(p, "row", "noshrink");
-            Ui.Text(head, r.Title, "h1", mo.Failed ? "bad" : mo.PrimaryDone == 3 ? "good" : "accent");
+            Ui.Text(head, r.Title, "h1", mo.Failed ? "bad" : mo.AllPrimaryDone ? "good" : "accent");
             Ui.Box(head, "grow");
-            Ui.Text(head, $"SCORE {r.Score}  " + new string('*', r.Stars) + (r.Stars == 0 ? "  (pass = 50)" : ""), "h1", "accent");
+            Ui.Text(head, $"SCORE {r.Score}  " + new string('★', r.Stars) + new string('☆', 3 - r.Stars) + (r.Stars == 0 ? "  (50 to pass)" : ""), "h1", "accent");
             Ui.Text(p, r.Summary, "text", "noshrink");
 
             var cols = Ui.Box(p, "row", "grow"); cols.style.alignItems = Align.Stretch;
             var c1 = Ui.Add(cols, new ScrollView(), "grow"); c1.style.width = Length.Percent(34); c1.style.paddingRight = 16;
-            Ui.Text(c1, "SCORE BREAKDOWN (GDD §26)", "h2");
+            Ui.Text(c1, "HOW YOU DID", "h2");
             foreach (var (n, pts, max) in r.Breakdown)
             {
-                var row = Ui.Box(c1, "row"); Ui.Text(row, n, "small", "grow"); Ui.Text(row, $"{pts:0.0} / {max:0}", "small");
+                var row = Ui.Box(c1, "row"); Ui.Text(row, n, "small", "grow"); Ui.Text(row, $"{pts:0} of {max:0}", "small");
                 Ui.SetBar(Ui.Bar(c1).fill, pts / max, pts / max > 0.66f ? Severity.Good : pts / max > 0.33f ? Severity.Warning : Severity.Critical);
             }
-            Ui.Text(c1, "OBJECTIVES", "h2");
-            Obj(c1, mo.P1Seismometer, $"Seismometer >= 80 m, 24 h powered ({mo.SeisGoodHours:0.0} h)");
-            Obj(c1, mo.P2Radiation, $"Radiation reading logged ({mo.RadReadings})");
-            Obj(c1, mo.P3Survive, $"Survived 72 h (reached h{mo.Hour:0.0})");
-            Obj(c1, mo.S1Samples, $"Optional: 2 samples ({mo.SamplesDelivered})");
-            Obj(c1, mo.S2Oxygen, $"Optional: end O2 >= 3 kg ({mo.CabinO2:0.0} kg)");
-            Obj(c1, mo.S3SuitOk, $"Optional: no suit damage (min {mo.MinIntegrity:0}%)");
-            if (mo.QuakeRecorded) Ui.Text(c1, "Bonus: moonquake recorded at hour 52!", "text", "good");
+            Ui.Text(c1, "GOALS", "h2");
+            foreach (var o in Levels.Current.Objectives) Obj(c1, o.Done(mo), o.Label(mo));
+            Obj(c1, mo.S2Oxygen, "Bonus: air tank 3 kg or more at the end");
+            Obj(c1, mo.S3SuitOk, "Bonus: suit never badly damaged");
+            if (mo.QuakeRecorded) Ui.Text(c1, "Bonus: your sensor heard a moonquake!", "text", "good");
 
             var c2 = Ui.Add(cols, new ScrollView(), "grow"); c2.style.width = Length.Percent(33); c2.style.paddingRight = 16;
-            Ui.Text(c2, mo.Failed ? "WHY IT HAPPENED (cause chain)" : "KEY MOMENTS", "h2");
-            if (mo.CauseChain.Count == 0) Ui.Text(c2, "No critical chain of events. Clean mission.", "text", "good");
+            Ui.Text(c2, mo.Failed ? "WHAT WENT WRONG" : "BIG MOMENTS", "h2");
+            if (mo.CauseChain.Count == 0) Ui.Text(c2, "Nothing went wrong. Super mission!", "text", "good");
             for (int i = 0; i < mo.CauseChain.Count; i++) Ui.Text(c2, (i == 0 ? "" : "-> ") + mo.CauseChain[i], "text", mo.Failed && i == mo.CauseChain.Count - 1 ? "bad" : "");
-            Ui.Text(c2, "WHAT WOULD WORK NEXT TIME", "h2");
+            Ui.Text(c2, "TRY THIS NEXT TIME", "h2");
             foreach (var s in r.Suggestions) Ui.Text(c2, "- " + s, "text");
-            Ui.Text(c2, "TIMELINE", "h2");
+            Ui.Text(c2, "MISSION DIARY", "h2");
             foreach (var e in mo.Events.Where(e => e.Sev != Severity.Info).Take(40))
             {
                 var row = Ui.Box(c2, "row"); Ui.Dot(row, e.Sev); Ui.Text(row, e.ToString(), "small").style.flexShrink = 1;
             }
 
             var c3 = Ui.Add(cols, new ScrollView(), "grow"); c3.style.width = Length.Percent(33);
-            Ui.Text(c3, "SCIENCE DATA LOG (provenance)", "h2");
-            if (mo.Data.Count == 0) Ui.Text(c3, "No data collected.", "text", "muted");
+            Ui.Text(c3, "SCIENCE YOU COLLECTED", "h2");
+            if (mo.Data.Count == 0) Ui.Text(c3, "No science this time.", "text", "muted");
             foreach (var d in mo.Data)
             {
-                Ui.Text(c3, $"h{d.Hour:00.0}  [{d.Instrument}]  {d.What}", "small");
-                Ui.Text(c3, $"     where: {d.Where}  |  {d.Conditions}", "small", "muted").style.marginBottom = 6;
+                Ui.Text(c3, $"Hour {d.Hour:0}:  {d.What}", "small").style.marginBottom = 4;
             }
-            Ui.Text(c3, "REAL WORLD vs IN THE GAME", "h2");
+            Ui.Text(c3, "REAL LIFE vs THE GAME", "h2");
             foreach (var (topic, real, game) in MissionReport.RealVsGame)
             {
                 Ui.Text(c3, topic, "h3");
-                Ui.Text(c3, "Real: " + real, "small");
-                Ui.Text(c3, "Game: " + game, "small", "muted").style.marginBottom = 6;
+                Ui.Text(c3, "Real life: " + real, "small");
+                Ui.Text(c3, "In the game: " + game, "small", "muted").style.marginBottom = 6;
             }
 
             var btns = Ui.Box(p, "row", "noshrink"); btns.style.justifyContent = Justify.FlexEnd; btns.style.marginTop = 10;
             Ui.Button(btns, "Main menu", m.ToMenu);
-            Ui.Button(btns, "Retry mission", m.Retry, "btn-primary", "btn-big");
+            Ui.Button(btns, "Try again", m.Retry, "btn-primary", "btn-big");
         }
 
         static void Obj(VisualElement parent, bool done, string text)

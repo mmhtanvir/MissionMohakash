@@ -114,7 +114,7 @@ namespace Mohakash
             var p = m.Player.transform.position;
             if (!m.Model.Inside && (trail.Count == 0 || (trail[trail.Count - 1] - p).sqrMagnitude > 4f)) { trail.Add(p); if (trail.Count > 400) trail.RemoveAt(0); }
 
-            bool want = GameInput.MapHeld && !m.Model.Ended && !m.Model.Inside;
+            bool want = !m.Model.Ended && (GameInput.MapHeld && !m.Model.Inside || m.RoverDeskOpen);   // habitat rover desk shows the map too
             fade = Mathf.MoveTowards(fade, want ? 1f : 0f, Time.unscaledDeltaTime * 7f);
             // free the mouse while the map is held so it can be clicked; give it back to the camera on release
             if (want && !freedCursor) { freedCursor = true; Game.SetCursorFree(true); }
@@ -205,15 +205,21 @@ namespace Mohakash
             // habitat, lander, rover
             var hc = ToPx(m.World.Hab.position);
             Marker(pt, hc, 9f, new Color(0.3f, 1f, 0.5f)); Tag("HAB", hc + new Vector2(12, -8), new Color(0.3f, 1f, 0.5f), false);
-            var lc = ToPx(m.World.OnGround(-30f, 18f));
+            var lc = ToPx(m.World.OnGround(Levels.Current.Lander.x, Levels.Current.Lander.y));
             Marker(pt, lc, 7f, new Color(0.75f, 0.55f, 1f)); Tag("Lander", lc + new Vector2(10, -8), new Color(0.75f, 0.55f, 1f), false);
             if (m.Rover != null)
             {
                 var rc = ToPx(m.Rover.transform.position);
                 Marker(pt, rc, 6f, new Color(1f, 0.9f, 0.25f)); Tag("Rover", rc + new Vector2(9, -7), new Color(1f, 0.9f, 0.25f), false);
             }
+            if (m.Remote != null)
+            {
+                var rr = ToPx(m.Remote.transform.position);
+                Marker(pt, rr, 5f, new Color(1f, 0.6f, 0.2f)); Tag($"RC-1 {m.Model.RemoteBattery:0}%", rr + new Vector2(8, -7), new Color(1f, 0.6f, 0.2f), false);
+            }
 
-            // player arrow
+            // player arrow (not while inside: the habitat interior is off the surface map)
+            if (m.Model.Inside) return;
             var pp = ToPx(m.ActivePosition);
             float yaw = (m.Rover != null && m.Rover.Driving ? m.Rover.transform.eulerAngles.y : m.Player.transform.eulerAngles.y) * Mathf.Deg2Rad;
             var fwd = new Vector2(Mathf.Sin(yaw), -Mathf.Cos(yaw));     // +z is up on the map, so screen-y is flipped

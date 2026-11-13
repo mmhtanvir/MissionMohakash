@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission Mohakash Mission Select</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500&amp;family=Orbitron:wght@900&amp;family=Rajdhani:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#03060c}
+.hud-line{fill:none;stroke:#4ea6ff;stroke-opacity:.45;stroke-width:1.5}
+.hud-bright{fill:none;stroke:#4ea6ff;stroke-width:3.5;stroke-linecap:square}
+.hud-tick{fill:none;stroke:#4ea6ff;stroke-opacity:.35;stroke-width:1.5}
+.hud-fill{fill:#4ea6ff}
+
+.ms-card{position:relative;box-sizing:border-box;width:384px;height:600px;padding:24px 22px 22px;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(14,34,66,.88),rgba(8,20,42,.82));border:1.5px solid rgba(110,175,255,.55);border-radius:4px;font-family:'Rajdhani',sans-serif;transition:border-color .25s,box-shadow .25s,transform .25s cubic-bezier(.2,.8,.2,1);animation:ms-in .5s cubic-bezier(.2,.8,.2,1) both}
+.ms-card:nth-child(2){animation-delay:.07s}
+.ms-card:nth-child(3){animation-delay:.14s}
+.ms-card:nth-child(4){animation-delay:.21s}
+.ms-card.is-on{border:2px solid #ffa24a;box-shadow:0 0 26px rgba(255,128,28,.55),inset 0 0 22px rgba(255,128,28,.12);transform:translateY(-6px)}
+.ms-corner{position:absolute;left:-9px;top:-9px;opacity:0;transition:opacity .25s}
+.is-on .ms-corner{opacity:1}
+.ms-num{font-weight:600;font-size:20px;line-height:24px;letter-spacing:.04em;color:#9fb3cc}
+.ms-title{margin-top:8px;font-weight:700;font-size:34px;line-height:38px;color:#f4f8ff}
+.ms-tag{margin-top:6px;font-weight:600;font-size:24px;line-height:28px}
+.ms-moon{color:#6fb4ff}
+.ms-mars{color:#ff7a4d}
+.ms-diff{margin-top:14px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:23px;line-height:28px;color:#ffc94d}
+.ms-stars{display:flex;gap:3px}
+.ms-p{margin-top:12px;font-weight:600;font-size:21px;line-height:24px;color:#e8f1ff}
+.ms-focus{color:#ec7bff}
+.ms-new{font-weight:500;font-size:19px;line-height:22px;color:#a9bcd4}
+.ms-status{margin-top:14px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:24px;line-height:28px;color:#c9d6e6}
+.ms-ok{color:#35e3c9}
+.ms-lock{display:flex;align-items:center;gap:6px;color:#ff6b6b}
+.ms-best{margin-top:10px;font-weight:600;font-size:20px;line-height:24px;color:#e8f1ff}
+.ms-cta{all:unset;box-sizing:border-box;margin-top:auto;position:relative;width:340px;height:52px;display:flex;align-items:center;justify-content:center;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:24px;letter-spacing:.06em;cursor:pointer}
+.ms-cta svg{position:absolute;left:0;top:0}
+.ms-cta span{position:relative}
+.ms-launch{color:#fff;filter:drop-shadow(0 0 10px rgba(255,128,28,.55));transition:filter .25s,transform .2s}
+.ms-launch:hover{filter:drop-shadow(0 0 18px rgba(255,128,28,.9));transform:translateY(-2px)}
+.ms-launch:active{transform:scale(.98)}
+.ms-soon{color:#93a7c2;cursor:not-allowed}
+.ms-cta:focus-visible span{text-decoration:underline;text-underline-offset:5px}
+
+.ms-close{position:absolute;left:1688px;top:50px;width:200px;height:62px;display:flex;align-items:center;justify-content:center;text-decoration:none;color:#e8f1ff;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:30px;letter-spacing:.08em;filter:drop-shadow(0 0 8px rgba(78,166,255,.35));transition:filter .25s}
+.ms-close svg{position:absolute;left:0;top:0}
+.ms-close span{position:relative}
+.ms-close:hover{color:#ffffff;filter:drop-shadow(0 0 16px rgba(78,166,255,.8))}
+.ms-close:focus-visible span{text-decoration:underline;text-underline-offset:5px}
+
+.ms-glow{animation:ms-glow 3s ease-in-out infinite}
+@keyframes ms-in{from{opacity:0;transform:translateY(24px)}to{opacity:1}}
+@keyframes ms-glow{0%,100%{text-shadow:0 0 14px rgba(60,150,255,.6)}50%{text-shadow:0 0 26px rgba(60,150,255,.95)}}
+@media (prefers-reduced-motion:reduce){.ms-card,.ms-glow{animation:none}.ms-card.is-on{transform:none}}
+</style>
+</helmet>
+<div style="position: relative; width: 1920px; height: 1080px; overflow: hidden; background: radial-gradient(ellipse 70% 80% at 60% 58%, #182233 0%, #0a101b 55%, #03060c 100%); font-family: 'Exo 2', sans-serif; color: #e8f1ff">
+
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(0deg, rgba(3,8,16,.55) 0%, rgba(3,8,16,0) 30%), linear-gradient(180deg, rgba(3,8,16,.55) 0%, rgba(3,8,16,0) 24%); pointer-events: none"></div>
+
+  <svg aria-hidden="true" width="1920" height="1080" viewBox="0 0 1920 1080" style="position: absolute; inset: 0; pointer-events: none">
+    <path class="hud-line" d="M60 24 H1860 L1896 60 V300 L1882 314 V760 L1896 774 V1020 L1860 1056 H60 L24 1020 V774 L38 760 V314 L24 300 V60 Z"></path>
+    <path class="hud-bright" d="M24 118 V60 L60 24 H150"></path>
+    <path class="hud-bright" d="M1770 24 H1860 L1896 60 V118"></path>
+    <path class="hud-bright" d="M24 962 V1020 L60 1056 H110"></path>
+    <path class="hud-bright" d="M1810 1056 H1860 L1896 1020 V962"></path>
+    <path class="hud-tick" d="M48 340h8M48 364h8M48 388h8M48 412h8M48 436h8M48 460h8M48 484h12M48 508h8M48 532h8M48 556h8M48 580h8M48 604h8M48 628h8M48 652h8M48 676h8M48 700h8M48 724h8"></path>
+    <path class="hud-tick" d="M1864 340h8M1864 364h8M1864 388h8M1864 412h8M1864 436h8M1864 460h8M1860 484h12M1864 508h8M1864 532h8M1864 556h8M1864 580h8M1864 604h8M1864 628h8M1864 652h8M1864 676h8M1864 700h8M1864 724h8"></path>
+    <path class="hud-line" d="M8 492 H40 M24 476 V508" style="stroke-opacity: .6"></path>
+    <path class="hud-line" d="M1880 492 H1912 M1896 476 V508" style="stroke-opacity: .6"></path>
+    <path class="hud-line" d="M1680 1016 H1860" style="stroke-opacity: .35"></path>
+  </svg>
+
+  <div style="position: absolute; left: 450px; top: 26px; width: 1020px; height: 150px">
+    <svg aria-hidden="true" width="1020" height="150" viewBox="0 0 1020 150" style="position: absolute; left: 0; top: 0">
+      <path d="M166 22H854L870 38V112L854 128H166L150 112V38Z" fill="rgba(6,18,38,.88)" stroke="#4ea6ff" stroke-opacity=".7" stroke-width="1.5"></path>
+    </svg>
+    <h1 class="ms-glow" style="position: absolute; left: 150px; top: 22px; width: 720px; height: 106px; margin: 0; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 58px; letter-spacing: .03em; color: #e6f2ff">MISSION SELECT</h1>
+  </div>
+
+  <a class="ms-close" href="Main.dc.html">
+    <svg aria-hidden="true" width="200" height="62" viewBox="0 0 200 62">
+      <path d="M.75 .75H186L199.25 14V61.25H14L.75 48Z" fill="rgba(10,30,60,.88)" stroke="#6eafff" stroke-opacity=".75" stroke-width="1.5"></path>
+      <path d="M176 10l8 8M184 10l-8 8" stroke="#a6d6ff" stroke-width="1.6" stroke-linecap="round"></path>
+    </svg>
+    <span>CLOSE</span>
+  </a>
+
+  <div style="position: absolute; left: 165px; top: 212px; display: flex; gap: 18px">
+
+    <div class="ms-card {{cls.m1}}" onMouseEnter="{{pick.m1}}">
+      <svg class="ms-corner" aria-hidden="true" width="130" height="70" viewBox="0 0 130 70"><path d="M3 64V18L18 3H124" fill="none" stroke="#ffb066" stroke-width="4"></path><path d="M34 3H74" stroke="#fff1de" stroke-width="2"></path></svg>
+      <div class="ms-num">MISSION 01</div>
+      <h2 class="ms-title" style="margin-bottom: 0">FIRST LIGHT</h2>
+      <div class="ms-tag ms-moon">[ MOON ]</div>
+      <div class="ms-diff">Difficulty:
+        <span class="ms-stars" role="img" aria-label="1 of 4">
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="none" stroke="#8fa4c0" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="none" stroke="#8fa4c0" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="none" stroke="#8fa4c0" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </span>
+      </div>
+      <div class="ms-p">Duration: 72 mission hours</div>
+      <div class="ms-p">Objective: Start the outpost, set up a seismometer far from base and survive</div>
+      <div class="ms-p ms-focus">Focus: Power + oxygen + spacewalks</div>
+      <div class="ms-p ms-new">New: Habitat, solar, battery, oxygen maker, suit, rover, seismometer</div>
+      <div class="ms-status">Status: <span class="ms-ok">AVAILABLE</span></div>
+      <div class="ms-best">Best score: 96</div>
+      <button class="ms-cta ms-launch" type="button" onFocus="{{pick.m1}}">
+        <svg aria-hidden="true" width="340" height="52" viewBox="0 0 340 52"><defs><linearGradient id="msLaunch" x1="0" x2="1"><stop offset="0" stop-color="#d45f0d"></stop><stop offset="1" stop-color="#a3430a"></stop></linearGradient></defs><path d="M.75 .75H339.25V39L326.5 51.25H.75Z" fill="url(#msLaunch)" stroke="#ffb066" stroke-width="1.5"></path></svg>
+        <span>LAUNCH</span>
+      </button>
+    </div>
+
+    <div class="ms-card {{cls.m2}}" onMouseEnter="{{pick.m2}}">
+      <svg class="ms-corner" aria-hidden="true" width="130" height="70" viewBox="0 0 130 70"><path d="M3 64V18L18 3H124" fill="none" stroke="#ffb066" stroke-width="4"></path><path d="M34 3H74" stroke="#fff1de" stroke-width="2"></path></svg>
+      <div class="ms-num">MISSION 02</div>
+      <h2 class="ms-title" style="margin-bottom: 0">INTO THE SHADOW</h2>
+      <div class="ms-tag ms-moon">[ MOON ]</div>
+      <div class="ms-diff">Difficulty:
+        <span class="ms-stars" role="img" aria-label="2 of 4">
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="none" stroke="#8fa4c0" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="none" stroke="#8fa4c0" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </span>
+      </div>
+      <div class="ms-p">Duration: 120 mission hours</div>
+      <div class="ms-p">Objective: Find ice in a dark crater and turn it into water</div>
+      <div class="ms-p ms-focus">Focus: Water, darkness, communication</div>
+      <div class="ms-p ms-new">New: Ice drill, water extractor, relay, generator</div>
+      <div class="ms-status">Status: <span class="ms-lock">LOCKED <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" fill="#ff6b6b"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="#ff6b6b" stroke-width="2.2" stroke-linecap="round"></path></svg></span></div>
+      <div class="ms-best">Best score: --</div>
+      <button class="ms-cta ms-soon" type="button" aria-disabled="true" onFocus="{{pick.m2}}">
+        <svg aria-hidden="true" width="340" height="52" viewBox="0 0 340 52"><path d="M.75 .75H339.25V39L326.5 51.25H.75Z" fill="rgba(28,50,84,.75)" stroke="#6eafff" stroke-opacity=".4" stroke-width="1.5"></path></svg>
+        <span>COMING IN NEXT BUILD</span>
+      </button>
+    </div>
+
+    <div class="ms-card {{cls.m3}}" onMouseEnter="{{pick.m3}}">
+      <svg class="ms-corner" aria-hidden="true" width="130" height="70" viewBox="0 0 130 70"><path d="M3 64V18L18 3H124" fill="none" stroke="#ffb066" stroke-width="4"></path><path d="M34 3H74" stroke="#fff1de" stroke-width="2"></path></svg>
+      <div class="ms-num">MISSION 03</div>
+      <h2 class="ms-title" style="margin-bottom: 0">JEZERO AIR</h2>
+      <div class="ms-tag ms-mars">[ MARS ]</div>
+      <div class="ms-diff">Difficulty:
+        <span class="ms-stars" role="img" aria-label="3 of 4">
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="none" stroke="#8fa4c0" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </span>
+      </div>
+      <div class="ms-p">Duration: 148 mission hours (6 sols)</div>
+      <div class="ms-p">Objective: Make oxygen from the Mars air and collect rock samples</div>
+      <div class="ms-p ms-focus">Focus: How Mars changes engineering</div>
+      <div class="ms-p ms-new">New: MOXIE-inspired oxygen maker, weather station, science rover</div>
+      <div class="ms-status">Status: <span class="ms-lock">LOCKED <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" fill="#ff6b6b"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="#ff6b6b" stroke-width="2.2" stroke-linecap="round"></path></svg></span></div>
+      <div class="ms-best">Best score: --</div>
+      <button class="ms-cta ms-soon" type="button" aria-disabled="true" onFocus="{{pick.m3}}">
+        <svg aria-hidden="true" width="340" height="52" viewBox="0 0 340 52"><path d="M.75 .75H339.25V39L326.5 51.25H.75Z" fill="rgba(28,50,84,.75)" stroke="#6eafff" stroke-opacity=".4" stroke-width="1.5"></path></svg>
+        <span>COMING IN NEXT BUILD</span>
+      </button>
+    </div>
+
+    <div class="ms-card {{cls.m4}}" onMouseEnter="{{pick.m4}}">
+      <svg class="ms-corner" aria-hidden="true" width="130" height="70" viewBox="0 0 130 70"><path d="M3 64V18L18 3H124" fill="none" stroke="#ffb066" stroke-width="4"></path><path d="M34 3H74" stroke="#fff1de" stroke-width="2"></path></svg>
+      <div class="ms-num">MISSION 04</div>
+      <h2 class="ms-title" style="margin-bottom: 0">ARCADIA ENDURANCE</h2>
+      <div class="ms-tag ms-mars">[ MARS ]</div>
+      <div class="ms-diff">Difficulty:
+        <span class="ms-stars" role="img" aria-label="4 of 4">
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55L2.48 9.42l6.58-.96z" fill="#ffc94d" stroke="#ffc94d" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+        </span>
+      </div>
+      <div class="ms-p">Duration: 247 mission hours (10 sols)</div>
+      <div class="ms-p">Objective: Survive a dust storm and a radio blackout while still doing science</div>
+      <div class="ms-p ms-focus">Focus: Everything combined</div>
+      <div class="ms-p ms-new">New: Greenhouse, water recycling, all rovers and suits</div>
+      <div class="ms-status">Status: <span class="ms-lock">LOCKED <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" fill="#ff6b6b"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="#ff6b6b" stroke-width="2.2" stroke-linecap="round"></path></svg></span></div>
+      <div class="ms-best">Best score: --</div>
+      <button class="ms-cta ms-soon" type="button" aria-disabled="true" onFocus="{{pick.m4}}">
+        <svg aria-hidden="true" width="340" height="52" viewBox="0 0 340 52"><path d="M.75 .75H339.25V39L326.5 51.25H.75Z" fill="rgba(28,50,84,.75)" stroke="#6eafff" stroke-opacity=".4" stroke-width="1.5"></path></svg>
+        <span>COMING IN NEXT BUILD</span>
+      </button>
+    </div>
+
+  </div>
+
+  <div style="position: absolute; left: 0; top: 842px; width: 1920px; text-align: center; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 26px; line-height: 32px; color: #5cc8ff">Missions 2-4 are designed in the GDD but not playable in this build yet. Pass Mission 1 to unlock the next one.</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var keys = ['m1', 'm2', 'm3', 'm4'];
+    var sel = (this.state && this.state.sel) || 'm1';
+    var self = this;
+    var cls = {};
+    var pick = {};
+    keys.forEach(function (k) {
+      cls[k] = k === sel ? 'is-on' : '';
+      pick[k] = function () {
+        var cur = (self.state && self.state.sel) || 'm1';
+        if (cur !== k) self.setState({ sel: k });
+      };
+    });
+    return { cls: cls, pick: pick };
+  }
+}
+</script>
+</body>
+</html>

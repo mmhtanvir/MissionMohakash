@@ -33,12 +33,26 @@ namespace Mohakash
     public class MissionModel
     {
         // ---- Mission constants (GDD §10 Mission 1) ----
-        public const float DurationH = 72f;
-        public const float ShadowStart = 40f, ShadowEnd = 46f;   // scripted 6 h shadow window
-        public const float SpeStart = 22f, SpeEnd = 25f;         // minor solar particle event
-        public const float QuakeHour = 52f;                     // scheduled moonquake window (Apollo-inspired timing, Dataset TBD)
-        public const float SeisMinDistance = 80f;               // GDD "8 cells"; 1 cell = 10 m in the 3D world (DECISIONS D3)
-        public const float SeisNeededHours = 24f;
+        // Per level (Sim/Level.cs). Level 1: 72 h, shadow h40-46, solar storm h22-25, quake h52, seismometer >= 80 m for 24 h.
+        public static LevelDef Lvl => Levels.Current;
+        public static float DurationH => Lvl.DurationH;
+        public static float ShadowStart => Lvl.ShadowStart;
+        public static float ShadowEnd => Lvl.ShadowEnd;
+        public static float ShadowLength => Lvl.ShadowEnd - Lvl.ShadowStart;
+        public static float SpeStart => Lvl.SpeStart;
+        public static float SpeEnd => Lvl.SpeEnd;
+        public static float QuakeHour => Lvl.QuakeHour;            // scheduled moonquake window (Apollo-inspired timing, Dataset TBD)
+        public static float SeisMinDistance => Lvl.SeisMinDistance; // GDD "8 cells"; 1 cell = 10 m in the 3D world (DECISIONS D3)
+        public static float SeisNeededHours => Lvl.SeisNeededHours;
+
+        /// <summary>Start of the dark window that is current or next at hour h (Mars nights repeat every NightEvery hours).</summary>
+        public static float DarkStart(float h)
+        {
+            float s = ShadowStart;
+            if (Lvl.NightEvery > 0f) while (h >= s + ShadowLength) s += Lvl.NightEvery;
+            return s;
+        }
+        public static bool DarkAt(float h) { float s = DarkStart(h); return h >= s && h < s + ShadowLength; }
         public const float DoseAllowance = 20f;                 // game-mSv per mission (GDD §17)
         public const float RoverPwhPerMeter = 0.012f;           // GDD 0.12 PWh per 10 m cell
 
@@ -59,12 +73,17 @@ namespace Mohakash
         public float Hunger = 100f, Hydration = 100f;   // 100 = fed / hydrated, 0 = starving / dehydrated
         public bool Inside = true, Sprinting, Resting, Driving;
 
-        public const float SuitO2Max = 4.5f, SuitBattMax = 4.2f, SuitCO2Max = 4.0f;   // Suit A (GDD §18)
+        public const float SuitO2Max = 8.5f, SuitBattMax = 8.2f, SuitCO2Max = 8.0f;   // Suit A, extended to ~8 h like a real EMU (GDD §18 had ~4 h)
         public float SuitO2 = SuitO2Max, SuitBatt = SuitBattMax, SuitCO2 = SuitCO2Max, SuitIntegrity = 100f, MinIntegrity = 100f;
         public float EvaLeft => Mathf.Min(SuitO2, SuitBatt, SuitCO2);
         public int Spares;
 
         public float RoverBattery, RoverCap;
+        // Remote rover (RC-1): uncrewed explorer driven from inside the habitat. Battery in %, ~2 km per charge;
+        // full charge in 4 h on its dock pad, slow solar trickle anywhere in sunlight so a stranded rover can crawl home.
+        public const float RemotePctPerMeter = 0.05f, RemoteDockPctPerHour = 25f, RemoteSolarPctPerHour = 3f;
+        public float RemoteBattery = 100f, RemoteFarthest;
+        public bool RemoteDocked;
         public bool RoverNearGarage;
 
         public bool SeisCarried, SeisDeployed;
@@ -106,7 +125,7 @@ namespace Mohakash
             CabinO2 = 4.0f;
             WaterCap = 40f + 40f * kit.Count("TNK-W");
             Water = Mathf.Min(WaterCap, 15f + 10f * kit.Count("WATER"));
-            Food = 9000f;
+            Food = 125f * DurationH;   // 104 g/h burn plus a margin
             CartridgeKg = kit.Has("SCR") ? 3f * kit.Count("CART") : 0f;
             Spares = kit.Count("SPARE");
             RoverCap = kit.Has("ROV-SC") ? 6f : 0f;
@@ -116,16 +135,16 @@ namespace Mohakash
             Net = new CommsNetwork(this);
 
             // GDD §14 power priority: 1 life support, 2 suit, 3 comms, 4 science, 6 rover charging.
-            AddLoad("HAB", "Habitat", 0.6f, 1, true);
-            if (kit.Has("SCR")) AddLoad("SCR", "CO2 Scrubber", 0.2f, 1, true);
-            if (kit.Has("OGS")) AddLoad("OGS", "Oxygen Generator", 1.0f, 1, false);
-            AddLoad("SUI", "Suit Station", 0.3f, 2, true);
-            if (kit.Has("COM")) AddLoad("COM", "Comms Console", 0.2f, 3, false);
-            if (kit.Has("RAD")) AddLoad("RAD", "Radiation Monitor", 0.02f, 4, false);
-            if (kit.Has("SEIS")) AddLoad("SEIS", "Seismometer", 0.1f, 4, false);
-            if (kit.Has("GAR")) AddLoad("GAR", "Garage (rover charging)", 0.4f, 6, false);
+            AddLoad("HAB", "Base lights & heat", 0.6f, 1, true);
+            if (kit.Has("SCR")) AddLoad("SCR", "Air cleaner", 0.2f, 1, true);
+            if (kit.Has("OGS")) AddLoad("OGS", "Oxygen maker", 1.0f, 1, false);
+            AddLoad("SUI", "Suit filler", 0.3f, 2, true);
+            if (kit.Has("COM")) AddLoad("COM", "Radio to Earth", 0.2f, 3, false);
+            if (kit.Has("RAD")) AddLoad("RAD", "Radiation meter", 0.02f, 4, false);
+            if (kit.Has("SEIS")) AddLoad("SEIS", "Quake sensor", 0.1f, 4, false);
+            if (kit.Has("GAR")) AddLoad("GAR", "Garage (charges the rover)", 0.4f, 6, false);
 
-            Log(Severity.Info, "Landed at Connecting Ridge, lunar south pole. Mission clock started.");
+            Log(Severity.Info, Lvl.Mars ? "You landed on Mars! The clock is running." : "You landed on the Moon! The clock is running.");
         }
 
         void AddLoad(string id, string name, float pw, int prio, bool locked) =>
@@ -136,14 +155,33 @@ namespace Mohakash
 
         public float SolarPeak => 1.0f * Kit.Count("SOL-S");
         public float BatteryPct => BatteryCap > 0 ? Battery / BatteryCap : 0f;
-        public bool InShadow => Hour >= ShadowStart && Hour < ShadowEnd;
-        public bool SpeActive => Hour >= SpeStart && Hour < SpeEnd;
-        public float ShadowEnergyNeeded => Loads.Where(l => l.Wanted && l.Id != "OGS" && l.Id != "GAR").Sum(l => l.Pw) * (ShadowEnd - ShadowStart);
+        public bool InShadow => DarkAt(Hour);
+        public bool SpeActive => SpeStart >= 0f && Hour >= SpeStart && Hour < SpeEnd;
+        public float ShadowEnergyNeeded => Loads.Where(l => l.Wanted && l.Id != "OGS" && l.Id != "GAR").Sum(l => l.Pw) * ShadowLength;
 
         public bool P1Seismometer => SeisGoodHours >= SeisNeededHours;
         public bool P2Radiation => RadReadings >= 1;
         public bool P3Survive => Hour >= DurationH && !Failed;
-        public int PrimaryDone => (P1Seismometer ? 1 : 0) + (P2Radiation ? 1 : 0) + (P3Survive ? 1 : 0);
+        public int PrimaryDone => Levels.Primary(this);
+        public bool AllPrimaryDone => PrimaryDone == Levels.PrimaryTotal;
+        /// <summary>Seismometer counts as well placed: at the level's marked site, or else far enough from base noise.</summary>
+        public bool SeisAtSite => Lvl.SeisSite is Vector2 site
+            ? new Vector2(SeisPos.x - site.x, SeisPos.z - site.y).magnitude <= LevelDef.SeisSiteRadius
+            : SeisDistance >= SeisMinDistance;
+
+        // ---- Storm damage (level 6): a broken machine draws no power until repaired ----
+        public readonly Dictionary<string, float> Broken = new Dictionary<string, float>();   // load id -> hour the repair finishes (inf = not started)
+        public int FaultsFixed;
+        public const float RepairHours = 3f;
+        public bool IsBroken(string id) => Broken.ContainsKey(id);
+        public string StartRepair(string id)
+        {
+            if (!Broken.TryGetValue(id, out var until)) return null;
+            if (Spares > 0) { Spares--; Broken[id] = Hour; return $"{Load(id)?.Name ?? id} is fixed! (used a spare parts kit)"; }
+            if (until < float.MaxValue) return $"Already fixing it. Ready at hour {until:0}.";
+            Broken[id] = Hour + RepairHours;
+            return $"No spare parts, so fixing takes {RepairHours:0} hours.";
+        }
         public bool S1Samples => SamplesDelivered >= 2;
         public bool S2Oxygen => CabinO2 >= 3f;
         public bool S3SuitOk => MinIntegrity >= 50f;
@@ -151,10 +189,13 @@ namespace Mohakash
         /// <summary>Illumination curve (0-1). Polar sun skims the horizon; scripted 6 h shadow window (GDD §10 M1).</summary>
         public static float SunAt(float h)
         {
-            if (h >= ShadowStart - 0.5f && h < ShadowStart) return Mathf.Lerp(0.9f, 0f, (h - (ShadowStart - 0.5f)) / 0.5f);
-            if (h >= ShadowStart && h < ShadowEnd) return 0f;
-            if (h >= ShadowEnd && h < ShadowEnd + 0.5f) return Mathf.Lerp(0f, 0.9f, (h - ShadowEnd) / 0.5f);
-            return 0.9f + 0.1f * Mathf.Sin(h * 0.26f);
+            float s = DarkStart(h), e = s + ShadowLength, prevEnd = s - (Lvl.NightEvery > 0f ? Lvl.NightEvery : 1e6f) + ShadowLength;
+            float sun;
+            if (h >= s - 0.5f && h < s) sun = Mathf.Lerp(0.9f, 0f, (h - (s - 0.5f)) / 0.5f);
+            else if (h >= s && h < e) sun = 0f;
+            else if (h >= prevEnd && h < prevEnd + 0.5f) sun = Mathf.Lerp(0f, 0.9f, (h - prevEnd) / 0.5f);
+            else sun = 0.9f + 0.1f * Mathf.Sin(h * 0.26f);
+            return Lvl.InStorm(h) ? sun * 0.25f : sun;   // dust storm: a quarter of the sunlight
         }
 
         // ---------------- Player actions ----------------
@@ -172,7 +213,7 @@ namespace Mohakash
         public void PickUpSeismometer()
         {
             Tasks.ResetSeis();
-            if (SeisDeployed) Log(Severity.Info, "Seismometer picked up for repositioning.");
+            if (SeisDeployed) Log(Severity.Info, "You picked up the quake sensor.");
             SeisDeployed = false; SeisCarried = true;
         }
 
@@ -180,52 +221,54 @@ namespace Mohakash
         {
             SeisCarried = false; SeisDeployed = true; SeisDistance = distanceFromHab; SeisPos = pos;
             var l = Load("SEIS"); if (l != null) l.Enabled = true;
-            if (distanceFromHab >= SeisMinDistance)
-                Log(Severity.Good, $"Seismometer deployed {distanceFromHab:0} m from the habitat: quiet site. Keep it powered for {SeisNeededHours:0} h.");
+            if (SeisAtSite)
+                Log(Severity.Good, $"Quake sensor set up! Now it listens for {SeisNeededHours:0} hours.");
+            else if (Lvl.SeisSite != null)
+                Log(Severity.Warning, "The quake sensor is not in the circle. Pick it up (E) and put it inside the orange circle.");
             else
-                Log(Severity.Warning, $"Seismometer deployed only {distanceFromHab:0} m away. Base vibration will mask quakes: move it beyond {SeisMinDistance:0} m.");
-            Data.Add(new DataRecord { Hour = Hour, Instrument = "SEIS", What = "Deployment",
+                Log(Severity.Warning, $"Too close to the base! The base shakes too much. Move the quake sensor past the orange ring ({SeisMinDistance:0} m).");
+            Data.Add(new DataRecord { Hour = Hour, Instrument = "SEIS", What = $"Set up the quake sensor, {distanceFromHab:0} m from the base",
                 Where = $"{distanceFromHab:0} m from HAB (x {pos.x:0}, z {pos.z:0})",
-                Conditions = distanceFromHab >= SeisMinDistance ? "Outside base noise radius" : "INSIDE base noise radius (noisy)" });
+                Conditions = SeisAtSite ? "Outside base noise radius" : "INSIDE base noise radius (noisy)" });
             if (Tasks.Enabled && !Tasks.AutoPass) Tasks.OnSeisDeployed();
         }
 
         public bool LogRadiationReading()
         {
-            if (!Powered("RAD")) { Log(Severity.Warning, "Radiation Monitor has no power: no reading taken."); return false; }
+            if (!Powered("RAD")) { Log(Severity.Warning, "The radiation meter has no power. Turn it on (Tab)."); return false; }
             RadReadings++;
             float rate = Inside ? 0.01f : 0.04f;
             if (SpeActive) rate += Inside ? 0.2f : 6f;
-            Data.Add(new DataRecord { Hour = Hour, Instrument = "RAD", What = $"Dose rate {rate:0.00} game-mSv/h, mission dose {Dose:0.0}",
+            Data.Add(new DataRecord { Hour = Hour, Instrument = "RAD", What = SpeActive ? "Read the radiation meter during a solar storm: very high!" : "Read the radiation meter: a little radiation, all normal",
                 Where = "Habitat exterior post", Conditions = SpeActive ? "During solar particle event" : "Quiet sun" });
-            Log(Severity.Good, $"Radiation reading logged ({rate:0.00} game-mSv/h).");
+            Log(Severity.Good, "Radiation checked. Good job!");
             return true;
         }
 
         public bool CollectSample(string site, float distance)
         {
-            if (SampleCapacity == 0) { Log(Severity.Warning, "No sample container in your loadout: cannot collect."); return false; }
-            if (SamplesCarried + SamplesDelivered >= SampleCapacity) { Log(Severity.Warning, "Sample container full."); return false; }
+            if (SampleCapacity == 0) { Log(Severity.Warning, "You didn't pack a rock box, so you can't pick up rocks."); return false; }
+            if (SamplesCarried + SamplesDelivered >= SampleCapacity) { Log(Severity.Warning, "Your rock box is full."); return false; }
             var why = Inv.Add(Inventory.Sample);
             if (why != null) { Log(Severity.Warning, why); return false; }
-            Data.Add(new DataRecord { Hour = Hour, Instrument = "EVA", What = $"Regolith sample {site}", Where = $"{distance:0} m from HAB",
+            Data.Add(new DataRecord { Hour = Hour, Instrument = "EVA", What = $"Picked up rock {site}, {distance:0} m from the base", Where = $"{distance:0} m from HAB",
                 Conditions = $"Suit integrity {SuitIntegrity:0}%" });
-            Log(Severity.Good, $"Regolith sample {site} bagged. Bring it back inside to deliver it.");
+            Log(Severity.Good, $"Got rock {site}! Bring it inside the base.");
             return true;
         }
 
         public void EnterHabitat()
         {
             Inside = true; Driving = false;
-            if (SamplesCarried > 0) { int n = Inv.Remove(Inventory.Sample); SamplesDelivered += n; Log(Severity.Good, $"{n} sample(s) stored. Delivered: {SamplesDelivered}."); }
-            Log(Severity.Info, "Entered the habitat. Suit refilling at the Suit Station.");
+            if (SamplesCarried > 0) { int n = Inv.Remove(Inventory.Sample); SamplesDelivered += n; Log(Severity.Good, $"Rocks delivered! You have {SamplesDelivered} now."); }
+            Log(Severity.Info, "You are inside. Your suit is filling up with air.");
         }
 
         public bool ExitHabitat()
         {
-            if (EvaLeft < 0.6f) { Log(Severity.Warning, $"Suit not ready: {EvaLeft:0.0} h left. Wait for the refill."); return false; }
+            if (EvaLeft < 0.6f) { Log(Severity.Warning, "Your suit needs more air first. Wait a bit, or speed up time."); return false; }
             Inside = false; Resting = false;
-            Log(Severity.Info, $"EVA started. Suit time {EvaLeft:0.0} h.");
+            Log(Severity.Info, $"You are outside! Your suit has air for {EvaLeft:0.0} hours.");
             return true;
         }
 
@@ -233,7 +276,30 @@ namespace Mohakash
         {
             if (Spares <= 0 || !Inside) return false;
             Spares--; SuitIntegrity = Mathf.Min(100f, SuitIntegrity + 50f);
-            Log(Severity.Good, $"Suit repaired with a spare kit ({Spares} left).");
+            Log(Severity.Good, "Suit fixed!");
+            return true;
+        }
+
+        /// <summary>Main O2 tanker beside the airlock: it is the habitat's oxygen store (CabinO2), and outside it tops the suit up
+        /// through an umbilical (same 0.06 kg per suit-hour as the indoor Suit Station), so you don't have to cycle the airlock.</summary>
+        public bool CanRefillSuitOutside(out string msg)
+        {
+            msg = null;
+            float need = (SuitO2Max - SuitO2) * 0.06f;
+            if (Inside) msg = "The O2 tanker refill hose is outside, by the airlock.";
+            else if (need < 0.001f && SuitBatt >= SuitBattMax && SuitCO2 >= SuitCO2Max) msg = "Suit is already full.";
+            else if (CabinO2 < need + 0.5f) msg = $"O2 tanker too low ({CabinO2:0.0} kg): the last 0.5 kg is kept for the habitat.";
+            return msg == null;
+        }
+
+        public bool RefillSuitOutside(out string msg)
+        {
+            if (!CanRefillSuitOutside(out msg)) return false;
+            float need = (SuitO2Max - SuitO2) * 0.06f;
+            CabinO2 -= need;
+            SuitO2 = SuitO2Max; SuitBatt = SuitBattMax; SuitCO2 = SuitCO2Max;
+            msg = $"Suit filled with air: {EvaLeft:0.0} hours outside.";
+            Log(Severity.Good, msg);
             return true;
         }
 
@@ -256,7 +322,7 @@ namespace Mohakash
             LastMealHour = Hour; MealsEaten++;
             Hunger = Mathf.Min(100f, Hunger + MealHunger); Hydration = Mathf.Min(100f, Hydration + 10f);
             Fatigue = Mathf.Max(0f, Fatigue - 6f);
-            Log(Severity.Good, $"Meal eaten (rehydrated ration). Fatigue eased. Food left: {FoodDaysLeft:0.0} days.");
+            Log(Severity.Good, "Yum! You ate a meal.");
             return true;
         }
 
@@ -270,7 +336,7 @@ namespace Mohakash
             if (Hydration >= 95f) { refusal = "You are not thirsty."; return false; }
             if (Water <= 0f) { refusal = "The water tank is empty."; return false; }
             Hydration = Mathf.Min(100f, Hydration + DrinkHydration);
-            Log(Severity.Good, $"Drank water. Tank: {Water:0} L.");
+            Log(Severity.Good, "You drank some water.");
             return true;
         }
 
@@ -284,17 +350,25 @@ namespace Mohakash
             if (Water < 4f) { refusal = $"Water is too low to spare ({Water:0.0} L). Keep it for drinking and the oxygen generator."; return false; }
             LastWashHour = Hour; WashesDone++;
             Water -= 1f; Fatigue = Mathf.Max(0f, Fatigue - 3f);
-            Log(Severity.Good, "Washed up (1 L of water used). Dust from the suit liner rinsed off; fatigue eased.");
+            Log(Severity.Good, "You washed up. You feel fresh!");
             return true;
         }
 
         /// <summary>Rover energy for a distance driven. Returns false when the battery is empty.</summary>
+        public bool UseRemoteEnergy(float meters)
+        {
+            if (RemoteBattery <= 0f) return false;
+            RemoteBattery = Mathf.Max(0f, RemoteBattery - meters * RemotePctPerMeter);
+            if (RemoteBattery <= 0f) Log(Severity.Warning, "The robot rover's battery is empty. It stops and charges slowly in the sun.");
+            return true;
+        }
+
         public bool UseRoverEnergy(float meters)
         {
             float cost = meters * RoverPwhPerMeter * (Sun < 0.05f ? 1.3f : 1f);
             if (RoverBattery <= 0f) return false;
             RoverBattery = Mathf.Max(0f, RoverBattery - cost);
-            if (RoverBattery <= 0f) { Log(Severity.Critical, "Rover battery empty: rover stranded. Walk back if you are inside the walk-back circle."); Cause("Rover battery ran out away from the garage"); }
+            if (RoverBattery <= 0f) { Log(Severity.Critical, "The rover's battery is empty! Get out and walk back to the base."); Cause("Rover battery ran out away from the garage"); }
             return true;
         }
 
@@ -316,7 +390,7 @@ namespace Mohakash
 
             // --- Power (GDD §14) ---
             Sun = SunAt(Hour);
-            Dust = Mathf.Min(0.5f, Dust + 0.02f / 24f * dt);   // ~2% per mission day (GDD §14: 1-3%/day)
+            Dust = Mathf.Min(0.5f, Dust + (Lvl.InStorm(Hour) ? 0.03f : 0.02f / 24f) * dt);   // storm: ~3%/h   // ~2% per mission day (GDD §14: 1-3%/day)
             Supply = SolarPeak * Sun * (1f - Dust);
 
             foreach (var l in Loads)
@@ -325,12 +399,13 @@ namespace Mohakash
                 {
                     case "OGS":
                         l.Wanted = Ogs == OgsMode.On || (Ogs == OgsMode.Auto && BatteryPct > 0.6f && Sun > 0.05f && CabinO2 < CabinO2Cap - 0.05f);
-                        l.Why = Ogs == OgsMode.Off ? "Switched off" : !l.Wanted ? "Auto: waiting (battery <60%, dark, or cabin full)" : "";
+                        l.Why = Ogs == OgsMode.Off ? "Off" : !l.Wanted ? "AUTO: waiting for spare power" : "";
                         break;
-                    case "SEIS": l.Wanted = l.Enabled && SeisDeployed; l.Why = !SeisDeployed ? "Not deployed" : l.Enabled ? "" : "Switched off"; break;
-                    case "GAR": l.Wanted = l.Enabled && RoverNearGarage && RoverBattery < RoverCap - 0.01f; l.Why = l.Wanted ? "" : "Idle (rover not parked / full)"; break;
-                    default: l.Wanted = l.Locked || l.Enabled; l.Why = l.Wanted ? "" : "Switched off"; break;
+                    case "SEIS": l.Wanted = l.Enabled && SeisDeployed; l.Why = !SeisDeployed ? "Not set up yet" : l.Enabled ? "" : "Off"; break;
+                    case "GAR": l.Wanted = l.Enabled && RoverNearGarage && RoverBattery < RoverCap - 0.01f; l.Why = l.Wanted ? "" : "Waiting for the rover"; break;
+                    default: l.Wanted = l.Locked || l.Enabled; l.Why = l.Wanted ? "" : "Off"; break;
                 }
+                if (Broken.TryGetValue(l.Id, out var fixAt)) { l.Wanted = false; l.Why = fixAt < float.MaxValue ? $"BROKEN: fixed at hour {fixAt:0}" : "BROKEN: press FIX"; }
             }
 
             if (Battery <= BatteryCap * 0.01f) batteryLockout = true;
@@ -344,24 +419,24 @@ namespace Mohakash
                 bool was = l.Powered;
                 l.Powered = l.Wanted && l.Priority <= shortAt && available >= l.Pw - 0.0001f;
                 bool deferrable = l.Id == "OGS" && Ogs == OgsMode.Auto;   // AUTO only uses spare power
-                if (deferrable && l.Wanted && !l.Powered) { l.Why = "Auto: waiting for spare power"; continue; }
+                if (deferrable && l.Wanted && !l.Powered) { l.Why = "AUTO: waiting for spare power"; continue; }
                 if (l.Wanted && !l.Powered && shortAt == int.MaxValue) shortAt = l.Priority;
                 if (l.Powered) { available -= l.Pw; Demand += l.Pw; }
                 if (was && l.Wanted && !l.Powered)
                 {
-                    string why = Sun < 0.05f ? "shadow window, battery empty" : "not enough power";
-                    l.Why = "SHED: " + why;
-                    Log(l.Priority <= 2 ? Severity.Critical : Severity.Warning, $"{l.Name} lost power ({why}).");
+                    string why = Sun < 0.05f ? "it is dark and the battery is empty" : "not enough power";
+                    l.Why = "NO POWER: " + why;
+                    Log(l.Priority <= 2 ? Severity.Critical : Severity.Warning, $"{l.Name} turned off: {why}.");
                     if (l.Priority <= 1) Cause($"{l.Name} lost power ({why})");
                 }
-                else if (l.Wanted && !l.Powered) l.Why = "SHED: " + (Sun < 0.05f ? "shadow window, battery empty" : "not enough power");
+                else if (l.Wanted && !l.Powered) l.Why = "NO POWER: " + (Sun < 0.05f ? "it is dark and the battery is empty" : "not enough power");
             }
             Battery = Mathf.Clamp(Battery + (Supply - Demand) * dt, 0f, BatteryCap);
 
             // --- Oxygen / CO2 / water / food (GDD §13, §15) ---
             if (Powered("OGS"))
             {
-                float need = 0.1125f * dt;
+                float need = Lvl.Mars ? 0f : 0.1125f * dt;   // Mars: MOXIE-style, O2 from atmospheric CO2
                 if (Water >= need)
                 {
                     Water -= need;
@@ -371,7 +446,7 @@ namespace Mohakash
                     if (made > room) { O2Vented += made - room; made = room; }
                     CabinO2 += made;
                 }
-                else Latch("ogs-dry", Severity.Warning, "OGS has no water to split. Oxygen production stopped.");
+                else Latch("ogs-dry", Severity.Warning, "The oxygen maker ran out of water. It stopped making air.");
             }
             CabinO2 = Mathf.Max(0f, CabinO2 - 0.002f * dt);   // habitat leak
 
@@ -405,7 +480,7 @@ namespace Mohakash
             {
                 float removed = Mathf.Min(0.06f * dt, CO2, CartridgeKg);
                 CO2 -= removed; CartridgeKg -= removed;
-                if (CartridgeKg <= 0f) { Log(Severity.Critical, "Last scrubber cartridge is saturated. CO2 will now build up."); Cause("Scrubber cartridges ran out"); }
+                if (CartridgeKg <= 0f) { Log(Severity.Critical, "The last air filter is used up. Bad air (CO2) will build up now!"); Cause("Scrubber cartridges ran out"); }
             }
             Water = Mathf.Max(0f, Water - 0.125f * dt);
             Food = Mathf.Max(0f, Food - 104f * dt);
@@ -417,6 +492,7 @@ namespace Mohakash
 
             // --- Rover charging ---
             if (Powered("GAR")) RoverBattery = Mathf.Min(RoverCap, RoverBattery + 0.4f * dt);
+            RemoteBattery = Mathf.Min(100f, RemoteBattery + (RemoteDocked ? RemoteDockPctPerHour : RemoteSolarPctPerHour * Sun) * dt);
 
             // --- Seismometer + quake window ---
             if (SeisDeployed && Powered("SEIS"))
@@ -424,21 +500,21 @@ namespace Mohakash
                 if (SeisInstalled)
                 {
                     SeisPoweredHours += dt;
-                    if (SeisDistance >= SeisMinDistance) SeisGoodHours += dt * SeisQuality;
+                    if (SeisAtSite) SeisGoodHours += dt * SeisQuality;
                 }
             }            if (prevHour < QuakeHour && Hour >= QuakeHour)
             {
-                if (SeisDeployed && Powered("SEIS") && SeisDistance >= SeisMinDistance)
+                if (SeisDeployed && Powered("SEIS") && SeisAtSite)
                 {
                     QuakeRecorded = true;
-                    Data.Add(new DataRecord { Hour = Hour, Instrument = "SEIS", What = "Shallow moonquake recorded (event window from Apollo-era timing, dataset TBD)",
+                    Data.Add(new DataRecord { Hour = Hour, Instrument = "SEIS", What = "Heard a moonquake!",
                         Where = $"Seismometer {SeisDistance:0} m from HAB", Conditions = "Powered, outside base noise radius" });
-                    Log(Severity.Good, "MOONQUAKE RECORDED by the seismometer. Bonus science!");
+                    Log(Severity.Good, "MOONQUAKE! Your quake sensor heard it. Great science!");
                 }
                 else
                 {
                     QuakeMissed = true;
-                    Log(Severity.Warning, SeisDeployed ? (Powered("SEIS") ? "A moonquake happened, but base noise masked it (seismometer too close)." : "A moonquake happened while the seismometer had no power.")
+                    Log(Severity.Warning, SeisDeployed ? (Powered("SEIS") ? "A moonquake happened, but the sensor was too close to the noisy base." : "A moonquake happened, but the quake sensor had no power.")
                                                        : "A moonquake happened. No seismometer was listening.");
                 }
             }
@@ -466,7 +542,21 @@ namespace Mohakash
             Gateway.Tick(this);
             CheckWarnings();
 
-            if (PrimaryDoneHour < 0f && P1Seismometer && P2Radiation) PrimaryDoneHour = Hour;
+            if (PrimaryDoneHour < 0f && PrimaryDone >= Levels.PrimaryTotal - 1 && !P3Survive) PrimaryDoneHour = Hour;   // everything but "survive"
+
+            // --- Storm damage + repairs ---
+            foreach (var (fh, id) in Lvl.Faults)
+                if (prevHour < fh && Hour >= fh && Load(id) != null)
+                {
+                    Broken[id] = float.MaxValue;
+                    Log(Severity.Critical, $"The storm broke the {Load(id).Name}! Press Tab, then FIX.");
+                    Cause($"Dust storm broke the {Load(id).Name}");
+                }
+            foreach (var id in Broken.Where(b => Hour >= b.Value).Select(b => b.Key).ToList())
+            {
+                Broken.Remove(id); FaultsFixed++;
+                Log(Severity.Good, $"{Load(id)?.Name ?? id} is fixed and working again.");
+            }
 
             // --- End conditions (GDD §25) ---
             if (Health <= 0f) Fail(hypoxic ? (Inside ? "Cabin oxygen ran out" : "Suit life support ran out during EVA") : "Crew health reached 0");
@@ -474,7 +564,7 @@ namespace Mohakash
             else if (Hour >= DurationH)
             {
                 Ended = true;
-                Log(PrimaryDone == 3 ? Severity.Good : Severity.Warning, PrimaryDone == 3 ? "Mission complete: all primary objectives met." : "Mission timer ended. Some primary objectives were not met.");
+                Log(AllPrimaryDone ? Severity.Good : Severity.Warning, AllPrimaryDone ? "Mission complete: all primary objectives met." : "Mission timer ended. Some primary objectives were not met.");
             }
         }
 
@@ -482,7 +572,7 @@ namespace Mohakash
         {
             Ended = true; Failed = true; FailCause = cause;
             Cause(cause);
-            Log(Severity.Critical, "MISSION FAILED: " + cause + ".");
+            Log(Severity.Critical, "MISSION OVER: " + cause + ".");
         }
 
         void Latch(string key, Severity s, string text) { if (latched.Add(key)) Log(s, text); }
@@ -495,45 +585,50 @@ namespace Mohakash
 
         void CheckWarnings()
         {
-            if (BatteryCap > 0) Check(BatteryPct < 0.25f, "bat25", Severity.Warning, $"Battery below 25% ({Battery:0.0} PWh). Shed loads or wait for sun.");
-            Check(CabinO2 < 2f, "o2-2", Severity.Warning, "Cabin oxygen low (< 2 kg). Is the OGS running?");
-            Check(CabinO2 < 1f, "o2-1", Severity.Critical, "Cabin oxygen critical (< 1 kg).", "Cabin oxygen fell below 1 kg");
+            if (BatteryCap > 0) Check(BatteryPct < 0.25f, "bat25", Severity.Warning, "Battery is low! Switch off things you don't need (Tab), or wait for the sun.");
+            Check(CabinO2 < 2f, "o2-2", Severity.Warning, "The air tank is getting low. Is the oxygen maker on? (Tab)");
+            Check(CabinO2 < 1f, "o2-1", Severity.Critical, "The air tank is almost empty!", "Cabin oxygen fell below 1 kg");
             if (CabinO2 < 1f && latched.Add("near-o2")) NearFailures++;
-            Check(CabinO2 <= 0f, "o2-0", Severity.Critical, "CABIN OXYGEN 0 kg. 2-hour countdown to mission failure.", "Cabin oxygen reached 0 kg");
-            Check(CO2 > 0.4f, "co2-4", Severity.Warning, "CO2 rising. Check the scrubber and cartridges.");
-            Check(CO2 > 0.6f, "co2-6", Severity.Critical, "CO2 harmful: health falling, fatigue rising.", "CO2 built up above the safe level");
-            Check(Water < 3f, "water", Severity.Warning, "Water below 3 L.");
-            Check(Water <= 0f, "water0", Severity.Critical, "Out of water.", "Water ran out");
-            Check(!Inside && EvaLeft < 1f, "eva1", Severity.Warning, $"Suit: under 1 h left. Head back now.");
-            Check(!Inside && EvaLeft < 0.5f, "eva05", Severity.Critical, "Suit reserve (30 min). Return to the airlock immediately!", "Stayed outside into the suit reserve");
-            Check(!Inside && SuitIntegrity < 50f, "suit50", Severity.Warning, "Suit integrity below 50%: slow O2 leak. Repair with a spare inside.");
-            Check(Health < 40f, "hp40", Severity.Critical, "Health below 40%.");
+            Check(CabinO2 <= 0f, "o2-0", Severity.Critical, "The air tank is EMPTY! Turn on the oxygen maker (Tab) fast!", "Cabin oxygen reached 0 kg");
+            Check(CO2 > 0.4f, "co2-4", Severity.Warning, "Bad air (CO2) is building up. Check the air cleaner.");
+            Check(CO2 > 0.6f, "co2-6", Severity.Critical, "Too much bad air (CO2)! It is making you sick.", "CO2 built up above the safe level");
+            Check(Water < 3f, "water", Severity.Warning, "Water is running low.");
+            Check(Water <= 0f, "water0", Severity.Critical, "You ran out of water!", "Water ran out");
+            Check(!Inside && EvaLeft < 1f, "eva1", Severity.Warning, "Your suit air is getting low. Head back home now.");
+            Check(!Inside && EvaLeft < 0.5f, "eva05", Severity.Critical, "Your suit is almost out of air! Go back to the airlock NOW!", "Stayed outside into the suit reserve");
+            Check(!Inside && SuitIntegrity < 50f, "suit50", Severity.Warning, "Your suit is damaged and leaking air. Fix it inside with spare parts.");
+            Check(Health < 40f, "hp40", Severity.Critical, "Your health is low! Eat, drink and rest inside.");
             if (Health < 30f && latched.Add("near-hp")) NearFailures++;
-            Check(Dose > 15f, "dose15", Severity.Warning, "Radiation dose high (> 15 of 20 game-mSv). Stay inside.");
-            Check(Dose > DoseAllowance, "dose20", Severity.Critical, "Dose over the mission allowance: health falling.", "Radiation dose exceeded the allowance");
+            Check(Dose > 15f, "dose15", Severity.Warning, "You got a lot of radiation. Stay inside!");
+            Check(Dose > DoseAllowance, "dose20", Severity.Critical, "Too much radiation! It is hurting your health.", "Radiation dose exceeded the allowance");
 
             // Scripted hazard warnings
-            if (Hour >= ShadowStart - 2f && Hour < ShadowStart)
-                Latch("shadow-warn", Severity.Warning, $"Shadow window in {ShadowStart - Hour:0.0} h (6 h without sun). Load needs ~{ShadowEnergyNeeded:0.0} PWh; battery holds {Battery:0.0} PWh.");
-            if (Hour >= ShadowStart && latched.Add("shadow-start"))
+            float ds = DarkStart(Hour), len = ShadowLength;
+            string dark = Lvl.Mars ? "Night" : "Dark time";
+            if (Hour >= ds - 2f && Hour < ds)
+                Latch("shadow-warn" + ds, Severity.Warning, $"It gets dark in {Mathf.Ceil(ds - Hour):0} h, for {len:0} hours. Fill the battery and switch off what you don't need.");
+            if (Hour >= ds && Hour < ds + len && latched.Add("shadow-start" + ds))
             {
-                Log(Severity.Warning, "Shadow window: the ridge is in shadow. Solar output 0 for 6 h.");
-                if (Battery < ShadowEnergyNeeded) Cause($"Entered the 6 h shadow window with {Battery:0.0} PWh stored but ~{ShadowEnergyNeeded:0.0} PWh needed");
+                Log(Severity.Warning, $"It is dark now. The solar panels stop for {len:0} hours.");
+                if (Battery < ShadowEnergyNeeded) Cause("It got dark before the battery was full enough");
             }
+            if (Lvl.StormStart >= 0f && Hour >= Lvl.StormStart && latched.Add("storm-start"))
+                Log(Severity.Critical, $"DUST STORM! The sun is weak until hour {Lvl.StormEnd:0}. Wipe the dust off the solar panels.");
+            if (Lvl.StormStart >= 0f && Hour >= Lvl.StormEnd) Latch("storm-end", Severity.Good, "The dust storm is over. The sun is back!");
             Check(Gateway.Calls < Resupply.MaxCalls && Resupply.Items.Any(i => i.Low(this)), "gateway-hint", Severity.Info,
-                Net.Connected ? "Supplies running low: you can call Lunar Gateway for a cargo drone (Tab > Call Gateway)."
-                              : "Supplies running low. Fix the comms antenna first, then call Lunar Gateway for a cargo drone.");
-            Check(Hydration < 25f, "thirsty", Severity.Warning, "You are getting dehydrated. Drink at the water dispenser in the galley.");
-            Check(Hunger < 25f, "hungry", Severity.Warning, "You are getting hungry. Eat a meal at the galley.");
-            if (Hour >= ShadowEnd) Latch("shadow-end", Severity.Good, "Sunlight is back on the ridge.");
-            if (Hour >= SpeStart - 1f / 6f && Hour < SpeStart && Powered("RAD"))
-                Latch("spe-warn", Severity.Critical, "RAD ALERT: solar particle event in 10 minutes. Get inside the habitat!");
-            if (Hour >= SpeStart && latched.Add("spe-start"))
+                Net.Connected ? "Running low on supplies? Press Tab and call for a supply drone."
+                              : "Running low on supplies? Fix the radio antenna first, then call for a supply drone.");
+            Check(Hydration < 25f, "thirsty", Severity.Warning, "You are thirsty. Drink water in the kitchen.");
+            Check(Hunger < 25f, "hungry", Severity.Warning, "You are hungry. Eat in the kitchen.");
+            if (Lvl.NightEvery <= 0f && Hour >= ShadowEnd) Latch("shadow-end", Severity.Good, "The sun is back!");
+            if (SpeStart >= 0f && Hour >= SpeStart - 1f / 6f && Hour < SpeStart && Powered("RAD"))
+                Latch("spe-warn", Severity.Critical, "SOLAR STORM in 10 minutes! Get inside the base!");
+            if (SpeStart >= 0f && Hour >= SpeStart && latched.Add("spe-start"))
             {
-                Log(Inside ? Severity.Warning : Severity.Critical, Kit.Has("RAD") ? "Solar particle event in progress (3 h). Shelter inside." : "Dose rising fast! No radiation monitor, so no early warning.");
+                Log(Inside ? Severity.Warning : Severity.Critical, Kit.Has("RAD") ? "Solar storm! Stay inside until it is over." : "Solar storm! Radiation is rising fast. Get inside!");
                 if (!Inside) Cause("Caught outside during the solar particle event");
             }
-            if (Hour >= SpeEnd) Latch("spe-end", Severity.Good, "Solar particle event over.");
+            if (SpeStart >= 0f && Hour >= SpeEnd) Latch("spe-end", Severity.Good, "The solar storm is over.");
         }
     }
 }

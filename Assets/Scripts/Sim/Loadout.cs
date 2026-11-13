@@ -78,9 +78,9 @@ namespace Mohakash
         /// <summary>Always packed in the simple loadout (422 kg / 94 Cr): everything Mission 1's objectives need.</summary>
         public static readonly (string id, int qty, string label)[] Standard =
         {
-            ("HAB", 1, "Habitat"), ("SUI", 1, "Airlock"), ("SUIT-A", 1, "Spacesuit"), ("SOL-S", 2, "2 Solar arrays"), ("BAT", 1, "Battery"),
-            ("OGS", 1, "Oxygen maker"), ("SCR", 1, "CO2 scrubber"), ("CART", 2, "2 Scrubber cartridges"), ("COM", 1, "Comms console"),
-            ("SEIS", 1, "Seismometer"), ("RAD", 1, "Radiation monitor"), ("STO", 1, "Storage"), ("SAMP", 1, "Sample box"),
+            ("HAB", 1, "Base (habitat)"), ("SUI", 1, "Airlock door"), ("SUIT-A", 1, "Spacesuit"), ("SOL-S", 2, "2 Solar panels"), ("BAT", 1, "Battery"),
+            ("OGS", 1, "Oxygen maker"), ("SCR", 1, "Air cleaner"), ("CART", 2, "2 Air filters"), ("COM", 1, "Radio to Earth"),
+            ("SEIS", 1, "Quake sensor"), ("RAD", 1, "Radiation meter"), ("STO", 1, "Storage box"), ("SAMP", 1, "Rock box"),
         };
 
         public class Extra { public string Key, Name, Benefit; public (string id, int qty)[] Items; }

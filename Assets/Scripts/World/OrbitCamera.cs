@@ -63,7 +63,7 @@ namespace Mohakash
                 return;
             }
             if (AutoOrbit) yaw += 4f * Time.unscaledDeltaTime;
-            else if (Input && Cursor.lockState == CursorLockMode.Locked)
+            else if (Input && (Cursor.lockState == CursorLockMode.Locked || GameInput.Touch && !Game.CursorFree))
             {
                 var d = GameInput.Look * 0.09f * Game.MouseSensitivity;
                 yaw += d.x;

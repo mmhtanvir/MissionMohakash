@@ -26,6 +26,9 @@ namespace Mohakash
             t.dir = i + 1 < args.Length ? args[i + 1] : Path.Combine(Application.persistentDataPath, "autotest");
             Directory.CreateDirectory(t.dir);
             PlayerPrefs.DeleteAll();
+            int li = System.Array.IndexOf(args, "-level");
+            if (li >= 0 && li + 1 < args.Length && int.TryParse(args[li + 1], out var lvl)) Game.Level = lvl;   // play a level other than 1
+            SceneManager.sceneLoaded += (s, _) => Debug.Log("[AUTOTEST] scene loaded " + s.name);
         }
 
         IEnumerator Shot(string name)
@@ -49,7 +52,7 @@ namespace Mohakash
             var menu = FindAnyObjectByType<MainMenu>();
             menu.ShowMissionSelect(); yield return Wait(0.8f);
             yield return Shot("01b_mission_select");
-            menu.StartMission();
+            Game.StartLevel(Game.Level);   // the -level flag, else 1
 
             yield return RunMission(null, true);   // null = the simple loadout's default choice
 
@@ -73,9 +76,11 @@ namespace Mohakash
             int screen = 0;
             for (float t0 = Time.realtimeSinceStartup; m.Current != Mission1.Phase.Operations && Time.realtimeSinceStartup - t0 < 60f; )
             {
+                m = FindAnyObjectByType<Mission1>(); if (m == null || m.Ui == null) { yield return null; continue; }
                 var advance = m.Ui.TestAdvance; m.Ui.TestAdvance = null;
                 if (advance == null) { yield return null; continue; }   // fading between screens
                 if (full) yield return Shot($"0{2 + screen++}_prelaunch");
+                if (m == null || m.Ui == null) continue;   // scene reloaded while we took the shot
                 advance(kit);   // only the loadout uses the kit; briefing and planner ignore it
                 yield return Wait(1.5f);
             }
@@ -94,6 +99,11 @@ namespace Mohakash
                 yield return Tap(Key.Space); yield return Wait(0.5f);
                 yield return Shot("06_sprint_jump");
                 GameInput.SimSprint = false; GameInput.SimMove = Vector2.zero;
+                yield return Tap(Key.Q); yield return Wait(0.4f);
+                yield return Shot("06b_watch");
+                yield return Tap(Key.Q);
+                m.TestTeleport(m.RemoteDock + new Vector3(-6f, 0, -6f)); yield return Wait(0.8f);
+                yield return Shot("06c_rc1_dock");
 
                 m.TestTeleport(m.World.SeisCratePoint + new Vector3(-1.5f, 0, 0));
                 yield return Wait(0.5f); yield return Tap(Key.E); yield return Wait(1.5f);
@@ -136,9 +146,22 @@ namespace Mohakash
                 }
                 yield return Wait(0.5f);
                 yield return Shot("12_inside_habitat");
+                for (int i = 0; i < 4; i++)   // hub centre, four directions
+                {
+                    m.Player.Teleport(HabitatInterior.Origin + new Vector3(0f, 0.15f, 2.2f)); m.Cam.Snap(i * 90f, 10f); yield return Wait(0.5f);
+                    yield return Shot($"12h_hub_{i}");
+                }
                 yield return Tap(Key.Tab); yield return Wait(0.6f);
                 yield return Shot("13_systems_panel");
                 yield return Tap(Key.Tab);
+                yield return Tap(Key.V); GameInput.SimMove = new Vector2(0f, 1f); yield return Wait(3f);
+                yield return Shot("13b_rc1_controller");
+                GameInput.SimMove = Vector2.zero; yield return Tap(Key.V); yield return Wait(0.3f);
+                m.Player.Teleport(HabitatInterior.Origin + new Vector3(2.3f, 0.15f, -2.3f)); yield return Wait(0.6f);
+                yield return Shot("13c_rover_desk_station");
+                yield return Tap(Key.E); yield return Wait(0.6f);
+                yield return Shot("13d_rover_desk_map");
+                yield return Tap(Key.Escape); yield return Wait(0.3f);
             }
             else
             {
@@ -158,7 +181,7 @@ namespace Mohakash
             }
             yield return Wait(3.5f);
             var mo = m.Model;
-            Debug.Log($"[AUTOTEST] RESULT failed={mo.Failed} cause='{mo.FailCause}' hour={mo.Hour:0.0} score={m.Report.Score} primary={mo.PrimaryDone}/3 " +
+            Debug.Log($"[AUTOTEST] RESULT failed={mo.Failed} cause='{mo.FailCause}' hour={mo.Hour:0.0} score={m.Report.Score} primary={mo.PrimaryDone}/{Levels.PrimaryTotal} " +
                       $"seisGood={mo.SeisGoodHours:0.0} rad={mo.RadReadings} samples={mo.SamplesDelivered} o2={mo.CabinO2:0.00} water={mo.Water:0.0} " +
                       $"battery={mo.Battery:0.0} quake={mo.QuakeRecorded} dose={mo.Dose:0.0} events={mo.Events.Count}");
             foreach (var c in mo.CauseChain) Debug.Log("[AUTOTEST] cause: " + c);

@@ -17,6 +17,8 @@ namespace Mohakash
                 ("E", "Use / pick up / set down (seismometer, samples, airlock, radiation post, clean solar panels)"),
                 ("T", "Torch on / off (outside only)"),
                 ("F", "Inventory: what you carry, torch, stores and cargo"),
+                ("V (inside habitat)", "Remote rover: drive it from the habitat to explore (WASD, C swaps first-person / chase camera). V or Esc to come back. Charges on its pad by the garage"),
+                ("Q", "Wrist watch: habitat status (power, battery, cabin O2, water, food, CO2, sun)"),
             }),
             ("ROVER", new[]
             {

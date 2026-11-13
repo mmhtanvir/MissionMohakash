@@ -20,6 +20,12 @@ namespace Mohakash
         public MoonWorld World { get; private set; }
         public Astronaut Player { get; private set; }
         public Rover Rover { get; private set; }
+        public Rover Remote { get; private set; }   // RC-1 remote explorer, driven from inside the habitat (V)
+        public Vector3 RemoteDock { get; private set; }
+        public const float RemoteDockRadius = 5f;
+        public Camera RemoteCam { get; private set; }   // RC-1's chase camera, rendered onto the handheld controller's screen
+        public bool RoverDeskOpen;
+        public void ToggleRoverDesk() => RoverDeskOpen = !RoverDeskOpen;
         public OrbitCamera Cam { get; private set; }
         public MissionUi Ui { get; private set; }
         public MissionReport Report { get; private set; }
@@ -129,6 +135,7 @@ namespace Mohakash
             var cam = SceneKit.MakeCamera();
             World = new GameObject("Moon World").AddComponent<MoonWorld>();
             World.BuildEnvironment();
+            if (Levels.Current.Mars) World.MakeMars();
 
             Cam = cam.gameObject.AddComponent<OrbitCamera>();
             Cam.World = World;
@@ -167,7 +174,7 @@ namespace Mohakash
             {
                 float dmg = Mathf.Round(4f * (speed - Astronaut.HardLandingSpeed + 1f));
                 Model.SuitIntegrity = Mathf.Max(0f, Model.SuitIntegrity - dmg);
-                Model.Log(Severity.Warning, $"Hard landing ({speed:0.0} m/s): you fell and scuffed the suit, integrity -{dmg:0}%. Land softer: smaller jumps near drops.");
+                Model.Log(Severity.Warning, "Ouch! You fell and scratched your suit. Use smaller jumps.");
             };
             Torch = Player.gameObject.AddComponent<Torch>();
             Torch.Init(Cam.transform, () => Model.Inside || Player.Dead, Player.EvaRig);
@@ -177,16 +184,30 @@ namespace Mohakash
                 Rover.UseEnergy = m => Model.UseRoverEnergy(m);
             }
 
+            RemoteDock = World.RemoteDockPoint;   // beside the crewed rover, in front of the garage
+            Remote = Rover.Create(World, RemoteDock, "Remote Rover (RC-1)", 1.3f, "MarsRover");   // HD-only model: scale = metres
+            MoonWorld.Spawn("ChargingStation", RemoteDock + Vector3.down * 0.02f, Quaternion.identity, 2.6f, null, "RC-1 charging pad");   // no collider: RC-1 parks on it
+            Remote.UseEnergy = m => Model.UseRemoteEnergy(m);
+            RemoteCam = new GameObject("RC-1 camera").AddComponent<Camera>();
+            RemoteCam.transform.SetParent(Remote.transform, false);
+            SetRemoteView(true);
+            RemoteCam.nearClipPlane = 0.05f; RemoteCam.targetTexture = new RenderTexture(640, 400, 24); RemoteCam.enabled = false;
+            World.SetRing(World.MakeRing("Remote rover dock (5 m)", new Color(0.95f, 0.75f, 0.3f, 0.85f), 0.25f), RemoteDock, RemoteDockRadius);
+
             noiseRing = World.MakeRing("Seismometer noise radius (80 m)", new Color(1f, 0.55f, 0.15f, 0.9f), 0.45f);
             World.SetRing(noiseRing, World.Hab.position, MissionModel.SeisMinDistance);
             walkRing = World.MakeRing("Walk-back circle", new Color(0.3f, 0.85f, 0.95f, 0.8f), 0.35f);
+            if (Kit.Has("GAR")) World.SetRing(World.MakeRing("Rover charging bay (9 m)", new Color(0.35f, 0.95f, 0.45f, 0.85f), 0.3f), World.GaragePoint, 9f);   // matches RoverNearGarage
 
             Cam.AutoOrbit = false; Cam.Target = Player.transform; Cam.Distance = 4.4f; Cam.Height = 1.5f;
             Cam.Snap(MoonWorld.EarthAzimuth - 25f, 8f);   // sun behind the camera, Earth on the horizon
             Model.Inside = false;
-            Model.Log(Severity.Info, "You are outside, next to the airlock. Start with Task A: go inside and work through the readiness checklist at the power & life support console. The seismometer crate can wait until the EVA checks are done.");
+            Model.Log(Severity.Info, Levels.Current.Tutorial
+                ? "You are outside, next to the door of your base. First, go inside and check the base at the computer (Task A)."
+                : "You are outside, next to the door of your base. Look at WHAT TO DO NOW on the right.");
             Current = Phase.Operations;
             Ui.StartHud();
+            AddGauges();
             // Minimap – created after the world and interactables are fully built
             Minimap = gameObject.AddComponent<MinimapSystem>();
             Minimap.Init(Ui.Root, this);
@@ -194,19 +215,42 @@ namespace Mohakash
             FullMap.Init(Ui.Root, this);
 
             // Tasks
-            Model.Tasks.Enabled = true;
+            Model.Tasks.Enabled = Levels.Current.Tutorial;   // Task A-G procedures are the level 1 tutorial
             Model.Tasks.ManifestValid = () => Kit.WithinLimits;   // Task A: cargo within mass / budget limits
             Model.Tasks.Say = (sev, text) => { Ui.Toast(text, sev); Model.Log(sev, text.Replace("\n", "  ")); };
 
             // CommsNetwork
-            var sites = new[] { World.OnGround(46f, 52f), World.OnGround(-96f, -44f), World.OnGround(128f, -70f) };
-            Model.Net.Init(World.OnGround(-6f, -8f), p => World.HeightAt(p),
-                           new[] { "A", "B", "C" }, sites,
+            var lv = Levels.Current.SampleSites;
+            Model.Net.Init(World.ComPoint, p => World.HeightAt(p),
+                           System.Array.ConvertAll(lv, s => s.name), System.Array.ConvertAll(lv, s => World.OnGround(s.xz.x, s.xz.y)),
                            () => Rover != null ? (Vector3?)Rover.transform.position : null);
             Comms = gameObject.AddComponent<CommsWorkstation>();
             Comms.Init(Ui.Root, this);
 
             Game.SetCursorFree(false);
+        }
+
+        /// <summary>Floating level readouts over the hardware: O2 storage, power storage, both rover batteries and the suit's tank.</summary>
+        void AddGauges()
+        {
+            var up = Vector3.up * 3.2f;
+            System.Func<float> o2 = () => Model.CabinO2Cap > 0 ? Model.CabinO2 / Model.CabinO2Cap : 0f;
+            System.Func<string> o2Text = () => $"AIR TANK  {o2():0%}";
+            var tanker = World.OnGround(World.AirlockPoint.x + 2f, 4.5f) + up;
+            Ui.AddGauge(() => tanker, o2Text, o2);
+            if (Kit.Has("TNK-O")) { var t = World.O2TanksPoint + up; Ui.AddGauge(() => t, o2Text, o2); }
+            if (Kit.Has("BAT"))
+            {
+                var b = World.BatteryPoint + up;
+                Ui.AddGauge(() => b, () => $"BATTERY  {Model.BatteryPct:0%}", () => Model.BatteryPct);
+            }
+            if (Rover != null)
+                Ui.AddGauge(() => Rover.transform.position + Vector3.up * 2.6f,
+                            () => $"ROVER BATTERY  {(Model.RoverCap > 0 ? Model.RoverBattery / Model.RoverCap : 0f):0%}", () => Model.RoverCap > 0 ? Model.RoverBattery / Model.RoverCap : 0f);
+            Ui.AddGauge(() => Remote.transform.position + Vector3.up * 1.8f, () => $"ROBOT ROVER  {Model.RemoteBattery:0}%", () => Model.RemoteBattery / 100f);
+            // suit tank: above the backpack, hidden while driving (the rover gauge is there)
+            Ui.AddGauge(() => Rover != null && Rover.Driving ? Vector3.down * 1000f : Player.transform.position + Vector3.up * 2.3f - Player.transform.forward * 0.3f,
+                        () => $"SUIT AIR  {Model.SuitO2:0.0} h", () => Model.SuitO2 / MissionModel.SuitO2Max);
         }
 
         void BuildInteractables()
@@ -236,14 +280,23 @@ namespace Mohakash
 
             if (Kit.Has("RAD"))
             {
-                var rad = Interactable.Create("Radiation Monitor", World.OnGround(6f, -8f), 3f, parent);
+                var rad = Interactable.Create("Radiation Monitor", World.RadPoint, 3f, parent);
                 rad.Prompt = () => "Log a radiation reading";
                 rad.Use = () => Model.LogRadiationReading();
                 rad.ShowMarker = () => Model.RadReadings == 0;
             }
 
-            var sites = new[] { ("A", new Vector2(46, 52)), ("B", new Vector2(-96, -44)), ("C", new Vector2(128, -70)) };
-            foreach (var (name, xz) in sites)
+            if (Levels.Current.SeisSite is Vector2 ss && Kit.Has("SEIS"))
+            {
+                var sp = World.OnGround(ss.x, ss.y);
+                World.MakeBeacon(sp, new Color(1f, 0.55f, 0.15f, 0.2f), 14f);
+                World.SetRing(World.MakeRing("Seismometer site", new Color(1f, 0.55f, 0.15f, 0.95f), 0.4f), sp, LevelDef.SeisSiteRadius);
+                var mark = Interactable.Create("Seismometer site", sp, 0f, parent);
+                mark.Available = () => false; mark.MarkerColor = new Color(1f, 0.55f, 0.15f);
+                mark.ShowMarker = () => !Model.P1Seismometer;
+            }
+
+            foreach (var (name, xz) in Levels.Current.SampleSites)
             {
                 var p = World.OnGround(xz.x, xz.y);
                 var rock = MoonWorld.Spawn("Rock_34W5ymEePk", p + Vector3.down * 0.3f, Quaternion.Euler(0, xz.x, 0), 0.32f, parent, "Sample site " + name);
@@ -278,49 +331,60 @@ namespace Mohakash
                 clean.Use = () => Model.CleanArrays();
             }
 
-            var lander = Interactable.Create(null, World.OnGround(-30f, 18f), 7f, parent);
-            lander.Prompt = () => "Lander: the crew vehicle that brought you (mission ends at hour 72)";
-            lander.Use = () => Ui.Toast("The lander is your ride home. Survive to hour 72 and complete the objectives.", Severity.Info);
+            var lander = Interactable.Create(null, World.OnGround(Levels.Current.Lander.x, Levels.Current.Lander.y), 7f, parent);
+            lander.Prompt = () => $"Lander: the crew vehicle that brought you (mission ends at hour {MissionModel.DurationH:0})";
+            lander.Use = () => Ui.Toast($"The lander is your ride home. Survive to hour {MissionModel.DurationH:0} and complete the objectives.", Severity.Info);
+
+            // Main O2 tanker beside the airlock: the habitat's oxygen supply (Model.CabinO2: the OGS fills it, the cabin breathes from it)
+            // and an outdoor suit refill point, so you don't have to cycle the airlock
+            var o2Pos = World.OnGround(World.AirlockPoint.x + 2f, 4.5f);   // beside the airlock ladder, clear of the hab walls
+            MoonWorld.AddBoxCollider(MoonWorld.Spawn("OxygenTank", o2Pos, Quaternion.identity, 1.2f, parent, "Main O2 tanker"));
+            var o2Post = Interactable.Create("Main O2 tanker", o2Pos, 3.2f, parent);
+            o2Post.MarkerColor = new Color(0.43f, 0.7f, 1f);
+            o2Post.Available = () => !Model.Inside;
+            o2Post.ShowMarker = () => !Model.Inside && Model.EvaLeft < 2f;
+            o2Post.Prompt = () => $"Refill suit oxygen ({Model.EvaLeft:0.0} h left, tanker {Model.CabinO2:0.0}/{Model.CabinO2Cap:0} kg)";
+            o2Post.Use = () => { if (!cinematic) StartCoroutine(HoseSwapRoutine()); };
 
             // Outdoor hardware you can walk up to and read: every machine on the pad now answers when you press E
             System.Func<Vector3, float, System.Func<bool>> near = (pos, r) => () => !Model.Inside && Player != null && Flat(Player.transform.position - pos).magnitude < r;
 
             if (Kit.Has("OGS"))
-                AddInspect(parent, "Oxygen plant", World.OnGround(-14f, -6f), 4.2f, "Inspect the oxygen plant", () =>
+                AddInspect(parent, "Oxygen plant", World.OgsPoint, 4.2f, "Inspect the oxygen plant", () =>
                 {
                     var l = Model.Load("OGS");
                     string st = l == null ? "n/a" : l.Powered ? "RUNNING" : (string.IsNullOrEmpty(l.Why) ? "idle" : l.Why);
-                    return $"Oxygen plant (electrolysis): {st}. Mode {Model.Ogs}. Makes 0.10 kg O2/h from water. Cabin O2 {Model.CabinO2:0.0}/{Model.CabinO2Cap:0} kg, water {Model.Water:0} L. Change the mode in the Systems panel (Tab) inside.";
+                    return $"Oxygen plant (electrolysis): {st}. Mode {Model.Ogs}. Makes 0.10 kg O2/h from water into the main O2 tanker by the airlock: {Model.CabinO2:0.0}/{Model.CabinO2Cap:0} kg, water {Model.Water:0} L. Change the mode in the Systems panel (Tab) inside.";
                 }, near);
             if (Kit.Has("BAT"))
-                AddInspect(parent, "Battery bank", World.OnGround(-13f, -12f), 4.5f, "Read the battery bank", () =>
+                AddInspect(parent, "Battery bank", World.BatteryPoint, 4.5f, "Read the battery bank", () =>
                     $"Battery bank: {Model.Battery:0.0}/{Model.BatteryCap:0} PWh ({Model.BatteryPct:0%}). Solar {Model.Supply:0.0} PW in, {Model.Demand:0.0} PW out. Charge it before the shadow window at hour {MissionModel.ShadowStart:0}.", near);
             if (Kit.Has("TNK-O"))
-                AddInspect(parent, "Oxygen tanks", World.OnGround(-16f, 3.9f), 4.2f, "Read the oxygen tank gauge", () =>
+                AddInspect(parent, "Oxygen tanks", World.O2TanksPoint, 4.2f, "Read the oxygen tank gauge", () =>
                     $"Oxygen storage: cabin holds {Model.CabinO2:0.0} of {Model.CabinO2Cap:0} kg. {Model.O2Vented:0.00} kg has been vented so far (a full cabin cannot store more).", near);
             if (Kit.Has("TNK-W"))
-                AddInspect(parent, "Water tank", World.OnGround(-16f, 8f), 3.6f, "Read the water tank gauge", () =>
+                AddInspect(parent, "Water tank", World.WaterTankPoint, 3.6f, "Read the water tank gauge", () =>
                     $"Water: {Model.Water:0} of {Model.WaterCap:0} L. The oxygen plant uses 1.125 L per kg of O2; the crew drinks about 3 L a day.", near);
             if (Kit.Has("STO"))
-                AddInspect(parent, "Storage pallet", World.OnGround(-6f, 11f), 4.2f, "Check the storage pallet", () =>
+                AddInspect(parent, "Storage pallet", World.StoragePoint, 4.2f, "Check the storage pallet", () =>
                     $"Storage: {Model.SamplesDelivered}/{Model.SampleCapacity} samples stored, {Model.SamplesCarried} in your bag, {Model.Spares} spare-parts kit(s), {Model.CartridgeKg:0.0} kg of scrubber capacity left.", near);
             if (Kit.Has("GAR"))
-                AddInspect(parent, "Rover garage", World.OnGround(2f, 21f), 6f, "Check the rover garage", () =>
+                AddInspect(parent, "Rover garage", World.GarageInspectPoint, 6f, "Check the rover garage", () =>
                 {
                     var g = Model.Load("GAR");
                     string st = g == null ? "n/a" : g.Powered ? "CHARGING" : (string.IsNullOrEmpty(g.Why) ? "idle" : g.Why);
                     return $"Rover garage: {st}. " + (Rover != null ? $"Rover battery {Model.RoverBattery:0.0}/{Model.RoverCap:0} PWh. Park inside the 9 m charging zone in front of the door to recharge." : "No rover packed.");
                 }, near);
             if (Kit.Has("COM"))
-                AddInspect(parent, "Surface antenna", World.OnGround(-6f, -8f), 4.5f, "Inspect the antenna and feed", () =>
+                AddInspect(parent, "Radio antenna", World.ComPoint, 4.5f, "Check the radio antenna", () =>
                 {
                     var n = Model.Net;
                     n.Inspected = true; n.Version++;
-                    n.Log.Add($"h{Model.Hour:0.0}  Walk-round inspection of the surface antenna: tracker error {n.PointingErrDeg:0.0} deg, feed loss {n.CableLossDb:0.0} dB.");
-                    string verdict = n.PointingErrDeg > 1.5f ? "The tracker is pointing off Earth: re-home it from the comms workstation."
-                                   : n.CableLossDb > 1f ? "The feed connector is loose: reseat it from the comms workstation."
-                                   : "Pointing and feed look good.";
-                    return $"Surface antenna: condition {n.AntennaCondition:0%}, tracker error {n.PointingErrDeg:0.0} deg, feed loss {n.CableLossDb:0.0} dB. {verdict}";
+                    n.Log.Add($"h{Model.Hour:0.0}  You checked the antenna outside.");
+                    string verdict = n.PointingErrDeg > 1.5f ? "It is not pointing at Earth. Press 'Fix the aim' at the radio desk inside."
+                                   : n.CableLossDb > 1f ? "The cable is loose. Press 'Fix the cable' at the radio desk inside."
+                                   : "It looks good!";
+                    return $"Radio antenna: {verdict}";
                 }, near);
         }
 
@@ -534,6 +598,23 @@ namespace Mohakash
                 yield return Player.SuitOff(HabitatInterior.DockStand, HabitatInterior.DockYaw, HabitatInterior.HelmetShelf, HabitatInterior.SuitHang);
                 Ui.Toast("Suit stowed in the alcove. It keeps refilling while you are inside.", Severity.Info);
             }
+            Player.EndScript(); cinematic = false;
+        }
+
+        // Outdoor refill: the suit's O2 line is unplugged before the tanker hose locks on. No air in between, so health drops.
+        public const float HoseSwapSeconds = 4f, HoseSwapHarmPerSec = 2.5f;   // real seconds; ~10 health per swap
+
+        IEnumerator HoseSwapRoutine()
+        {
+            if (!Model.CanRefillSuitOutside(out var why)) { Ui.Toast(why, Severity.Warning); yield break; }
+            cinematic = true; Player.BeginScript();
+            Ui.Toast($"Suit O2 line detached: no air until the tanker hose locks on ({HoseSwapSeconds:0} s). Hold your breath.", Severity.Warning);
+            for (float t = 0f; t < HoseSwapSeconds && !Model.Ended; t += Time.deltaTime)
+            {
+                Model.Health = Mathf.Max(0f, Model.Health - HoseSwapHarmPerSec * Time.deltaTime);   // paused: deltaTime 0, no harm
+                yield return null;
+            }
+            bool ok = Model.RefillSuitOutside(out var msg); Ui.Toast(msg, ok ? Severity.Good : Severity.Warning);
             Player.EndScript(); cinematic = false;
         }
 
@@ -759,12 +840,16 @@ namespace Mohakash
 
             if (GameInput.Pause && Ui.ControlsOpen) { Ui.ToggleControls(); GameInput.EndFrame(); return; }
             if (GameInput.Pause && Comms != null && Comms.Open) { Comms.Close(); GameInput.EndFrame(); return; }
+            if ((GameInput.Pause || GameInput.RemoteRover) && Remote.Driving) { ToggleRemote(); GameInput.EndFrame(); return; }
+            if (GameInput.RemoteCamera && Remote.Driving) SetRemoteView(!RemoteFirstPerson);
+            if ((GameInput.Pause || GameInput.Interact) && RoverDeskOpen) { RoverDeskOpen = false; GameInput.EndFrame(); return; }
             if (GameInput.Pause) { if (PlanOpen) TogglePlan(); else if (StoresOpen) ToggleStores(); else if (InventoryOpen) ToggleInventory(); else if (SystemsOpen) ToggleSystems(); else SetPaused(!Paused); }
             if (Paused) { GameInput.EndFrame(); return; }
 
             if (GameInput.Systems) { if (InventoryOpen) ToggleInventory(); ToggleSystems(); }
             if (GameInput.Inventory) { if (SystemsOpen) ToggleSystems(); ToggleInventory(); }
             if (GameInput.Help) Ui.ToggleControls();
+            if (GameInput.Watch) Ui.ToggleWatch();
             if (GameInput.Plan) TogglePlan();
             if (GameInput.Mark && !Player.Dead && !RemoveMarkNear(Player.transform.position, 2f, Model.Inside)) AddMark(Player.transform.position, Model.Inside);
             int sk = GameInput.SpeedKey; if (sk >= 0) SetSpeed(sk);
@@ -775,6 +860,8 @@ namespace Mohakash
             float hours = Time.deltaTime * Speed * TestSpeed / RealSecondsPerHour;
             Model.Sprinting = Player.IsSprinting && !Model.Inside;
             Model.Driving = Rover != null && Rover.Driving;
+            Model.RemoteDocked = !Remote.Driving && Flat(Remote.transform.position - RemoteDock).magnitude < RemoteDockRadius;
+            Model.RemoteFarthest = Mathf.Max(Model.RemoteFarthest, Flat(Remote.transform.position - World.Hab.position).magnitude);
             Model.RoverNearGarage = Rover != null && !Rover.Driving && Flat(Rover.transform.position - World.GaragePoint).magnitude < 9f;
             if (!Model.Inside) Model.FarthestFromBase = Mathf.Max(Model.FarthestFromBase, Flat(ActivePosition - World.Hab.position).magnitude);
             Model.Advance(hours);
@@ -804,12 +891,18 @@ namespace Mohakash
         void HandleWorldInput()
         {
             if (Model.Inside && Model.Resting && GameInput.Move.sqrMagnitude > 0.04f) ToggleRest();   // walking away wakes you up
-            bool canAct = !SystemsOpen && !InventoryOpen && !StoresOpen && !PlanOpen && !(Comms != null && Comms.Open) && !Player.Dead;
+            bool canAct = !SystemsOpen && !InventoryOpen && !StoresOpen && !PlanOpen && !(Comms != null && Comms.Open) && !Player.Dead && !Remote.Driving && !RoverDeskOpen;
             Player.Frozen = !canAct || (Rover != null && Rover.Driving);
 
             Focus = null;
             if (!canAct) return;
             if (Player.Busy) return;                         // walking to / crouching for / lowering an object
+            if (GameInput.RemoteRover)
+            {
+                if (Model.Inside && !cinematic) ToggleRemote();
+                else Ui.Toast("The remote rover is driven from inside the habitat.", Severity.Info);
+                return;
+            }
             if (GameInput.Torch && Torch.Toggle()) Ui.Toast(Torch.On ? "Torch on." : "Torch off.", Severity.Info);
 
             if (Rover != null && Rover.Driving)
@@ -829,6 +922,26 @@ namespace Mohakash
         }
 
         public bool NearRover => Rover != null && !Rover.Driving && Player && Flat(Rover.transform.position - Player.transform.position).magnitude < 4.5f;
+
+        /// <summary>Pick up / put down the RC-1 handheld controller. The astronaut stays put inside; the rover's camera feed shows
+        /// on the controller's screen (MissionUi) and WASD drives the rover.</summary>
+        public bool RemoteFirstPerson { get; private set; } = true;
+        // ponytail: hand-placed for the 1.3 m MarsRover model; nudge these if the nose cam clips the body
+        static readonly Vector3 RemoteNoseCam = new Vector3(0f, 0.95f, 0.6f), RemoteChaseCam = new Vector3(0f, 1.7f, -3.6f);
+        void SetRemoteView(bool firstPerson)
+        {
+            RemoteFirstPerson = firstPerson;
+            RemoteCam.transform.localPosition = firstPerson ? RemoteNoseCam : RemoteChaseCam;
+            RemoteCam.transform.localRotation = Quaternion.Euler(firstPerson ? 6f : 14f, 0f, 0f);
+            RemoteCam.fieldOfView = firstPerson ? 80f : 70f;
+        }
+
+        public void ToggleRemote()
+        {
+            Remote.Driving = !Remote.Driving;
+            RemoteCam.enabled = Remote.Driving;
+            if (Remote.Driving) Ui.Toast($"RC-1 controller on: battery {Model.RemoteBattery:0}%. WASD to drive, C to switch camera, V or Esc to put it down.", Severity.Info);
+        }
 
         void BoardRover()
         {
@@ -865,9 +978,10 @@ namespace Mohakash
             Current = Phase.Report;
             if (Model.Failed && !Model.Inside && Player.gameObject.activeSelf) Player.Die();
             if (Rover) Rover.Driving = false;
+            if (Remote.Driving) ToggleRemote();
             Report = new MissionReport(Model);
-            Game.RecordScore(1, Report.Score);
-            if (!Model.Failed && Model.PrimaryDone == 3 && Report.Score >= 50) Game.MarkPassed(1);
+            Game.RecordScore(Game.Level, Report.Score);
+            if (!Model.Failed && Model.AllPrimaryDone && Report.Score >= 50) Game.MarkPassed(Game.Level);
             StartCoroutine(ShowReportSoon());
         }
 
@@ -878,7 +992,7 @@ namespace Mohakash
             Ui.ShowReport(Report, Model);
         }
 
-        public void Retry() => Game.Load(Game.Mission1Scene);
+        public void Retry() => Game.StartLevel(Game.Level);
         public void ToMenu() => Game.Load(Game.MenuScene);
 
         // AutoTest helpers

@@ -29,12 +29,12 @@ namespace Mohakash
 
         // ── Factory ────────────────────────────────────────────────────────
 
-        public static Rover Create(MoonWorld world, Vector3 pos)
+        public static Rover Create(MoonWorld world, Vector3 pos, string name = "Scout Rover (ROV-SC)", float scale = 0.62f, string modelName = "Rover")
         {
-            var root = new GameObject("Scout Rover (ROV-SC)");
+            var root = new GameObject(name);
             root.transform.position = pos;
 
-            var m = MoonWorld.Spawn("Rover", pos, Quaternion.identity, 0.62f,
+            var m = MoonWorld.Spawn(modelName, pos, Quaternion.identity, scale,
                                     root.transform, "Rover model (Quaternius CC0)");
             if (m != null) MoonWorld.AddBoxCollider(m, 0.9f);
 

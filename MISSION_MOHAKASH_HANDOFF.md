@@ -219,3 +219,70 @@ Audit of features vs. wiring. Fixed (all C#, no asset changes):
 - **Gateway resupply** (`Sim/Resupply.cs`, Tab > "Call Gateway"): 3 calls, 30 kg drone, delivered to the habitat stores 6 h later: water, food, O2, scrubber cartridge, spare kit, sample container, battery, solar panel. Low stock highlights + an info hint. New report line "Self-reliance" (5 pts). The drone has no 3D model; instruments (SEIS/RAD/COM) are not orderable because their world objects are built at launch.
 - `Library/` had ~12k iCloud duplicate "* 2.*" files (some dataless) that hung Unity's import; deleted and regenerated. Keeping the project in iCloud-synced ~/Documents will keep causing this.
 - Verified: Unity 6000.6.5f1 batch compile clean, EditMode 14/14 (new: inventory, Gateway).
+
+## Session 2026-11-10 - wrist watch, O2 hose swap, remote rover RC-1
+- **Wrist watch (Q)**: habitat stats (power, battery, cabin O2, water, food, samples, CO2, sun, RC-1 battery) moved from the top bar into a toggled bottom-right card (`MissionUi.watch`). T was taken (torch), O (objectives).
+- **O2 tanker hose swap**: E at the outdoor tanker runs `Mission1.HoseSwapRoutine`: suit line detached for `HoseSwapSeconds` (4 s real), `HoseSwapHarmPerSec` 2.5 health/s, then `RefillSuitOutside`. `MissionModel.CanRefillSuitOutside` is checked first so a refused refill costs nothing.
+- **Remote rover RC-1**: second `Rover` (scale 0.32) on a dock pad at (14,17) by the garage, ring marks the 5 m dock. `MissionModel.RemoteBattery` in %, 0.05 %/m (~2 km), +25 %/h docked, +3 %/h x sun anywhere. Driven only from inside the habitat: **V** picks up the handheld controller (HUD panel with the rover chase camera's RenderTexture + battery), WASD drives, V/Esc puts it down; the astronaut stays inside. **Rover desk** station (hub north-west corner) opens the surface map, which now shows "RC-1 n%".
+- Verified: Unity batch compile clean, EditMode 16/16 (new: remote rover battery). NOT verified in a playthrough: watch/controller placement, chase-camera framing, desk placement against the hub walls.
+- Pending: the user's Downloads GLBs (~1.9M tris / 60 MB each) need decimation before import; gltf-transform via npx was blocked by auto mode, Blender not installed. Mars rover model intended for RC-1.
+- **User's models (later the same day)**: decimated in Blender (`tools/chibi_astronaut/decimate.py`, ~1.9M -> 15-80k tris, 1k textures) into `Resources/Models/HD/`. `MoonWorld.Spawn` prefers `Models/HD/X` and fits it to the old model's size and ground point (HD-only models: scale = metres). In use: Rover (off-road), MarsRover (RC-1), RoverGarage, SolarArrayVSAT, OxygenTank, WaterTank, LunarBattery, LogisticsPallet, CommsTerminal (= futuristic gadget), ChargingStation (RC-1 pad), RoverDesk (hub SE corner panel), Bed (second bunk = sleep pod; the player's bunk stays primitive for the sleep pose), Bathroom (wash corner). Not used: lunar habitat + hatch (airlock is tied to the cross habitat's anchors), lunar astronaut, space explorer, space station.
+- **Chibi astronaut**: `AstronautEVA.glb` is now the user's "space astronaut" mesh on the old EVA skeleton (`tools/chibi_astronaut/rig.py`: landmarks -> limbs posed to the rig's rest directions -> distance weights between neighbouring bones -> faces welding non-neighbour parts cut -> twin-tank backpack as EVA_Pack, camera on the Head bone). All 20 clips kept; EVA_Helmet / EVA_HatchFrame are now empty nodes (helmet is part of the mesh). `Astronaut.Prepare` skips the chibi bone scaling when the model has a `ChibiBody` node.
+- **Hub centre glitch**: the console mast had no collider, so the orbit camera ended inside it; now solid.
+- Watch is centred (bottom middle) like the RC-1 controller and hides while the controller is up.
+- AutoTest: logs scene loads, re-finds Mission1 each prelaunch screen (an intermittent loadout-hook crash on a destroyed MissionUi; root cause not found), adds hub-centre shots.
+
+## Session 2026-11-12 - level gauges, RC-1 first-person, longer EVA
+- **Floating gauges** (`MissionUi.AddGauge`, wired in `Mission1.AddGauges`): outside, within 40 m, live labels over the O2 tanker + O2 tanks (O2 STORAGE kg/%), battery bank (POWER STORAGE PWh/%), crewed rover and RC-1 (battery), and the astronaut's backpack (SUIT O2 h). White / amber < 40% / red < 15%.
+- **RC-1 camera**: first-person nose cam by default (`RemoteNoseCam` (0, 0.95, 0.6), FOV 80), **C** swaps to the old chase cam.
+- **EVA**: suit O2/battery/CO2 4.5/4.2/4.0 h -> 8.5/8.2/8.0 h.
+- Verified: batch compile clean, EditMode 16/16. NOT verified in a playthrough: gauge heights, nose-cam clipping into the MarsRover mesh.
+
+## Session 2026-11-12/13 - levels 2-6 playable, loadout fixes, rover heading
+- **Levels**: all 6 run in the Mission1 scene. `Sim/Level.cs` (`LevelDef`, `Levels.Current` from `Game.Level`) sets duration, shadow/night windows (`NightEvery` repeats Mars nights), solar storm, quake hour, seismometer site, sample sites, dust storm, storm faults and the objective list. `MissionModel` duration/hazard constants are now static properties reading the level; `PrimaryDone` / `AllPrimaryDone` / `Levels.PrimaryTotal` replace the hard-coded "3".
+  - L1 FIRST FLIGHT: unchanged (only level with Task A-G procedures, `LevelDef.Tutorial`).
+  - L2 START THE OUTPOST (48 h): seismometer must sit within 10 m of the marked site (92, 38) for 18 h + radiation reading.
+  - L3 LUNAR SAMPLE COLLECTION (48 h): deliver 5 samples from sites A-E (D, E new, farther out).
+  - L4 LUNAR SURVIVAL (120 h): 12 h shadow, storm h70-74, end with cabin O2 >= 2 kg.
+  - L5 MARS EXPLORATION (72 h): Mars look (`MoonWorld.MakeMars`: tinted ground/rocks, butterscotch sky + fog, no Earth), 3.71 m/s2 gravity outdoors, 6 h night every 24 h, OGS needs no water; make 4 kg O2 + 3 samples.
+  - L6 DUST STORM SURVIVAL (72 h): storm h8-56 (25% sun, ~3%/h dust), faults SCR h14 / OGS h30 / SUI h44; REPAIR button in the power panel (spare kit = instant, else 3 h).
+- Menu: every level card launches (`Game.StartLevel(n)`), best score / passed per level. AutoTest takes `-level N`.
+- Loadout: cards were click-through (`Ui.Box` = PickingMode.Ignore); card kg/Cr now computed from `Catalog`; picks kept on BACK. Same click fix for Lunar Intelligence cards.
+- Crewed rover HD model faced sideways: `MoonWorld.HdYaw("Rover") = 90`.
+- Verified: batch compile, EditMode 22/22 (new: every level survivable staying inside with repairs), macOS build, autotest runs of L2 and L6 without exceptions. NOT verified by a human playthrough: balance of L3-L6, L2 site terrain, Mars night visuals. The scripted AutoTest still plays the L1 routine on every level (no repairs, L1 seismometer spot).
+- **Unique placements** (2026-11-13): every level has its own sample beacons (and L2 seismometer site at (106, 28)); L1 sample C moved from steep (128, -70) to (150, 0). `SiteRules` + `SimTests.LevelSitesAreUniqueAndReachable` enforce slope < 12 deg (RawHeight, 6 m patch), 60-260 m from base, >= 30 m between any two sites across all levels. EditMode 23/23.
+- **Unique landing sites** (2026-11-13): `MoonWorld.RawHeight(x, z)` is outpost-local; each level rotates/offsets it onto its own patch of the landscape (`LevelDef.LandOffset` / `LandYaw`; L1 = (0,0)/0 so level 1 is unchanged). The outpost stays at (0,0) so no layout code moved. Per level also: rock scatter seed (`RockSeed`), lander + pad + pad masts (`Lander`, `LanderYaw`; map/minimap/interactable follow). Sites re-checked on each level's own terrain; L2 C -> (90,-141), L2 seismometer site -> (98,19), L3 B -> (-134,42), L6 C -> (-200,49). Not yet looked at in a playthrough.
+- **Per-level outpost yard** (2026-11-13): habitat + airlock fixed; `LevelDef.PowerNorth` mirrors the power/comms cluster (OGS, batteries, O2/water tanks, COM, RAD) to the north, `GarageSouth` mirrors the garage group (garage, rover start, RC-1 dock, charging zone) to the south, `Storage`/`StorageYaw` and `SolarStart`/`SolarStep` place the pallet and the array line. All positions go through `MoonWorld` points (`OgsPoint`, `ComPoint`, `RadPoint`, `StoragePoint`, `RemoteDockPoint`, `GarageInspectPoint`, `Pw()`, `Gz()`); Mission1 inspects, gauges, comms antenna and minimap use them. `SimTests.OutpostYardsDontOverlapAndDiffer` checks footprints vs the habitat cross, airlock approach, lander pad and each other, and that no two levels share a yard. L5 lander moved to (-30,-14) to clear its south garage. EditMode 24/24. Not yet looked at in a playthrough.
+
+## 2026-11-13: torn airlock ladder
+- Ragged strip at the foot of the stowed airlock ladder = leftover of the Tripo hatch split (build.py cuts faces by centroid).
+  `tools/habitat_v3/trim_ladder.py` degenerates the stairs triangles below 0.62 m in `Resources/Models/SurfaceHabitat.glb`
+  (already applied; rerun after a fresh game_pack.py). `CapsuleHatch.Attach` adds clean trim: 2 rail stubs (stairs node, move with it),
+  a sill block over the notch in the door frame, a strip on the landing pad's frayed back edge. Checked in Blender renders only.
+- Kids Easy mode was tried and removed (user: no modes; the UI is what is hard for kids).
+- Kid-readable HUD (no difficulty modes): YOU card = Health/Food/Water/Energy bars, all full = good (Energy = 100-fatigue);
+  Radiation row only on solar-storm levels. Outside: SPACESUIT card = Air left + Suit health + "Home is N m away".
+  Right card starts with WHAT TO DO NOW (big hint), then GOALS x of y; lunar-day dial, routine bar and the OK comms line removed
+  (comms line shows only when the link is down). Top bar: "Dark in N h" / "Hour N of D" / Pause. Watch, floating gauges, banners
+  and rover texts in % and plain words (no PW/PWh/kg O2). Goal labels reworded (quake sensor, bring rocks inside, stay safe).
+  USS: tiny 14, card-title 15, card small 17, bars 9 px. Not yet seen in a running game.
+- Kid wording pass 2: briefing (level title, big story text, "What you will do", "Good to know"), level Narrative/Steps rewritten short;
+  loadout = "Pack your rocket" (no category tabs, weight + coins, plain extras); planner = "Plan your N hours" (suggested plan pre-filled,
+  OUTSIDE/INSIDE/SLEEP, plain warnings, "Hour 6-12"); plan activity names + events plain. Tab = "BASE CONTROLS": plain battery/dark
+  lines, "Uses a lot/some/a little", one help line per machine, FIX button; supply drone panel reworded. Load names: Oxygen maker,
+  Air cleaner, Suit filler, Radio to Earth, Quake sensor... Load.Why: Off / AUTO: waiting / NO POWER: ... / BROKEN: press FIX (UI dot
+  checks those prefixes). All Log/Check/Latch messages rewritten for kids. Expert loadout and comms workstation still technical.
+- Pass 3: floating grey dot by the helmet = Torch.cs "Torch body" cylinder (turned to face the camera): removed, the torch light stays.
+  Report screen + MissionReport (titles, score names, suggestions, Real life vs the game) and the radio desk (CommsWorkstation,
+  CommsNetwork node/link/action text, comms Task B step names, antenna inspect) rewritten for kids; buttons numbered 1-7.
+  Report checks updated to the new text ("dark", "turned off:", "rocks"). NOT yet compiled: the Editor was open (batchmode refused).
+- Mobile: GameInput.Touch (mobile, or "-touch" on desktop) -> UI/TouchControls.cs: left stick (TouchMove), drag anywhere = look
+  (AddTouchLook, one-frame latch), round buttons USE/JUMP/RUN(hold)/ROVER + BASE/MAP(hold)/PLAN/BAG/WATCH/LIGHT/ROBOT/CAM/MENU feed the
+  same Key checks (TouchTap / TouchHeld). Hidden while Game.CursorFree. GameInput.Words() turns "(E)/Tab/(R)" into USE/BASE/ROVER in
+  hints, toasts, prompts. Ui.CreateRoot on touch: PanelSettings copy at 1600x900 (bigger UI) + safe-area insets; Ui.Panel max 98%.
+  Intro video path fixed for Android (jar:). ProjectSetup.BuildIOS (Xcode project, Builds/iOS) / BuildAndroid (ARM64 APK,
+  Builds/Android), IL2CPP, landscape only, bundle id com.missionmohakash.game (placeholder). iOS/Android modules installed via Hub CLI.
+
+- 2026-11-13: Touch safe-area fix (Ui.CreateRoot rechecks Screen.safeArea every 500 ms, max 10%/side). Windows rebuilt with all of this session's changes; Builds/MissionMohakash-Windows.zip re-zipped (exe + UnityPlayer.dll + D3D12 + MonoBleedingEdge + _Data, no BackUpThisFolder). Extract the whole folder: the exe does not run on its own.
+
+- 2026-11-13: Touch safe-area fix (Ui.CreateRoot rechecks Screen.safeArea every 500 ms, max 10%/side). Windows rebuilt with all of this session's changes; Builds/MissionMohakash-Windows.zip re-zipped (exe + UnityPlayer.dll + D3D12 + MonoBleedingEdge + _Data, no BackUpThisFolder). Extract the whole folder: the exe does not run on its own.

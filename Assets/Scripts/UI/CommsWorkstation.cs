@@ -35,12 +35,13 @@ namespace Mohakash
             root.Add(overlay);
 
             var left = Ui.Box(overlay, "col");
-            Ui.Text(left, "LUNAR COMMUNICATIONS NETWORK", "h1");
-            Ui.Text(left, "Illustrative interface specification. Not live spacecraft tracking.", "small", "muted");
+            Ui.Text(left, "RADIO DESK: TALK TO EARTH", "h1");
+            Ui.Text(left, "A pretend map that shows how your radio signal gets to Earth.", "small", "muted");
             var tabs = Ui.Box(left, "row");
-            Ui.Button(tabs, "Orbital view",          () => { local = false; showPaths = false; n.MapOpened = true; Refresh(); Check(); });
-            Ui.Button(tabs, "Local terrain",         () => { local = true;  showPaths = false; Refresh(); });
-            Ui.Button(tabs, "Available paths",       () => { showPaths = true; n.PathsReviewed = true; Refresh(); Check(); });
+            Ui.Button(tabs, "Space map",          () => { local = false; showPaths = false; n.MapOpened = true; Refresh(); Check(); });
+            Ui.Button(tabs, "Map around the base",         () => { local = true;  showPaths = false; Refresh(); });
+            Ui.Button(tabs, "Ways to reach Earth",       () => { showPaths = true; n.PathsReviewed = true; Refresh(); Check(); });
+            Ui.Button(tabs, "Places to explore",    () => LunarIntelligenceUi.Show(root));
             Ui.Button(tabs, "Close (Esc)", Close);
 
             map = new VisualElement();
@@ -72,16 +73,16 @@ namespace Mohakash
             info.enableRichText = true; info.style.whiteSpace = WhiteSpace.Normal;
 
             var acts = Ui.Box(right, "row"); acts.style.flexWrap = Wrap.Wrap;
-            Act(acts, "Run diagnostics",                () => n.Inspect());
-            Act(acts, "Re-home tracker (0.25 h)",       () => { m.Model.Advance(0.25f); return n.Rehome(); });
-            Act(acts, "Reseat feed connector (0.25 h)", () => { m.Model.Advance(0.25f); return n.Reseat(); });
-            Act(acts, "Establish link",                 () => n.Establish());
-            Act(acts, "Send test packet",               () => n.SendPacket());
-            Act(acts, "Voice check",                    () => n.Check("voice"));
-            Act(acts, "Telemetry check",                () => n.Check("tlm"));
-            Act(acts, "Science data check",             () => n.Check("sci"));
-            Act(acts, "Find relay site (0.5 h)",        () => { m.Model.Advance(0.5f); return n.FindRelaySite(); });
-            Act(acts, "Save link results",              () => n.SaveResults());
+            Act(acts, "1. Check the radio",                () => n.Inspect());
+            Act(acts, "Fix the aim (15 min)",       () => { m.Model.Advance(0.25f); return n.Rehome(); });
+            Act(acts, "Fix the cable (15 min)", () => { m.Model.Advance(0.25f); return n.Reseat(); });
+            Act(acts, "2. Connect to Earth",                 () => n.Establish());
+            Act(acts, "3. Send a hello message",               () => n.SendPacket());
+            Act(acts, "4. Test talking",                    () => n.Check("voice"));
+            Act(acts, "5. Test base messages",                () => n.Check("tlm"));
+            Act(acts, "6. Test science data",             () => n.Check("sci"));
+            Act(acts, "Find a relay spot (30 min)",        () => { m.Model.Advance(0.5f); return n.FindRelaySite(); });
+            Act(acts, "7. Save the results",              () => n.SaveResults());
 
             queueLbl = Ui.Text(right, "", "small"); queueLbl.style.whiteSpace = WhiteSpace.Normal;
             logLbl   = Ui.Text(right, "", "small", "muted"); logLbl.style.whiteSpace = WhiteSpace.Normal;
@@ -154,21 +155,18 @@ namespace Mohakash
             }
             info.text = showPaths ? PathsText() : NodeText();
 
-            float kb = 0f; foreach (var q in n.Queue) kb += q.Kb;
             var sb = new StringBuilder();
-            sb.Append($"<b>DATA QUEUE</b> (store and forward): {n.Queue.Count} waiting ({kb:0} KB), {n.Delivered} delivered. ");
-            sb.Append(n.BestRateMbps > 0f ? $"Link up at {n.BestRateMbps:0.###} Mbps: draining.\n" : "No path to Earth: data is held, not lost.\n");
-            for (int i = 0; i < Mathf.Min(3, n.Queue.Count); i++)
-                sb.Append($"  {n.Queue[i].Kind}  {n.Queue[i].Name}  {n.Queue[i].Kb:0} KB\n");
+            sb.Append($"<b>MESSAGES</b>: {n.Queue.Count} waiting, {n.Delivered} sent. ");
+            sb.Append(n.BestRateMbps > 0f ? "Sending now.\n" : "Can't reach Earth right now. Messages wait, they are not lost.\n");
             queueLbl.enableRichText = true; queueLbl.text = sb.ToString();
 
-            var lg = new StringBuilder("<b>EVENT LOG</b>\n");
+            var lg = new StringBuilder("<b>WHAT HAPPENED</b>\n");
             for (int i = Mathf.Max(0, n.Log.Count - 6); i < n.Log.Count; i++) lg.Append(n.Log[i]).Append('\n');
             logLbl.enableRichText = true; logLbl.text = lg.ToString();
 
             scaleLbl.text = local
-                ? "LOCAL TERRAIN: top-down, 100 m = 110 px, north up. Earth direction bearing 85 deg. Red X = terrain obstruction."
-                : "ORBITAL VIEW: not to scale (Moon radius 1,737 km, R-1 orbit about 3,000 to 9,000 km, Earth 384,400 km away).";
+                ? "Map around the base, seen from above. North is up. A red X means a hill is in the way."
+                : "Space map, not to scale. Earth is really 384,400 km away!";
             map.MarkDirtyRepaint();
         }
 
@@ -179,11 +177,8 @@ namespace Mohakash
 
         string LinkText(CommsLink l)
         {
-            string w = l.State == LinkState.Waiting && l.NextWindowH >= 0f ? $"   next window in {l.NextWindowH:0.0} h" : "";
-            string q = l.RateMbps > 0f
-                ? $"\n    SNR {l.SnrDb:0.0} dB (margin {l.MarginDb:0.0} dB), {l.RateMbps:0.###} Mbps, latency {l.LatencyS:0.00} s{w}"
-                : (w != "" ? "\n   " + w : "");
-            return $"<color=#{Hex(StateColor(l.State))}>{l.State.ToString().ToUpper()}</color>  {l.Name}\n    {l.Reason}{q}\n";
+            string word = l.State == LinkState.Verified ? "WORKS" : l.State == LinkState.Weak ? "WEAK" : l.State == LinkState.Waiting ? "WAIT" : "BLOCKED";
+            return $"<color=#{Hex(StateColor(l.State))}>{word}</color>  {l.Name}\n    {l.Reason}\n";
         }
 
         string NodeText()
@@ -191,14 +186,14 @@ namespace Mohakash
             var nd = n.Nodes.Find(x => x.Id == sel);
             if (nd == null) return "";
             var sb = new StringBuilder();
-            sb.Append($"<b>{nd.Name}</b>\n{nd.Type}{(nd.InService ? "" : "  (NOT IN SERVICE)")}\nServices: {nd.Services}\n\n");
+            sb.Append($"<b>{nd.Name}</b>\n{nd.Type}{(nd.InService ? "" : "  (not built yet)")}\nWhat it does: {nd.Services}\n\n");
             foreach (var l in n.Links) if (l.A == sel || l.B == sel) sb.Append(LinkText(l));
             return sb.ToString();
         }
 
         string PathsText()
         {
-            var sb = new StringBuilder("<b>AVAILABLE COMMUNICATION PATHS</b>\n");
+            var sb = new StringBuilder("<b>WAYS TO REACH EARTH</b>\n");
             foreach (var l in n.Links) sb.Append(LinkText(l));
             return sb.ToString();
         }

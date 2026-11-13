@@ -42,7 +42,26 @@ namespace Mohakash
             h.recess = new GameObject("Capsule light").AddComponent<Light>();
             h.recess.transform.SetParent(hab, true); h.recess.transform.position = inside;
             h.recess.type = LightType.Point; h.recess.range = 4f; h.recess.color = new Color(1f, 0.96f, 0.88f); h.recess.intensity = 0f; h.recess.shadows = LightShadows.None;
+
+            // clean trim over the ragged cuts left where tools/habitat_v3 split the ladder out of the Tripo hatch
+            // (tools/habitat_v3/trim_ladder.py drops the ladder's torn foot below 0.62 m): rail stubs down to the pivot,
+            // a sill block over the notch in the door frame, and a strip along the landing pad's back edge
+            var rail = SlidingDoor.LitMat(new Color(0.2f, 0.2f, 0.21f), 0.35f, 0.6f);
+            foreach (float z in new[] { -0.543f, 0.543f })
+                Trim(h.stairs, rail, new Vector3(-0.057f, 0.4f, z), new Vector3(0.145f, 0.82f, 0.145f), Quaternion.Euler(0f, 0f, 13.5f), true);
+            var hab0 = hab.position;
+            Trim(hab, SlidingDoor.LitMat(new Color(0.72f, 0.72f, 0.7f), 0.4f, 0.3f), hab0 + new Vector3(14.47f, 1.92f, 0f), new Vector3(0.36f, 0.27f, 0.9f), Quaternion.identity, false);
+            Trim(hab, SlidingDoor.LitMat(new Color(0.3f, 0.3f, 0.31f), 0.2f, 0.2f), hab0 + new Vector3(15.03f, 0.1f, 0f), new Vector3(0.12f, 0.2f, 1.44f), Quaternion.identity, false);
             return h;
+        }
+
+        static void Trim(Transform parent, Material mat, Vector3 pos, Vector3 size, Quaternion rot, bool local)
+        {
+            var t = GameObject.CreatePrimitive(PrimitiveType.Cube).transform; t.name = "Airlock trim"; Destroy(t.GetComponent<Collider>());
+            t.SetParent(parent, local ? false : true);
+            if (local) { t.localPosition = pos; t.localRotation = rot; } else t.SetPositionAndRotation(pos, parent.rotation * rot);
+            t.localScale = size;   // parents are unscaled (hab spawned at 1, stairs node 1)
+            t.GetComponent<Renderer>().sharedMaterial = mat;
         }
 
         static Transform Find(Transform t, string name)

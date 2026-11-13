@@ -14,6 +14,11 @@ namespace Mohakash
         public Transform Hab { get; private set; }
         public Vector3 AirlockPoint { get; private set; }
         public Vector3 GaragePoint { get; private set; }
+        public Vector3 OgsPoint, BatteryPoint, O2TanksPoint, WaterTankPoint, ComPoint, RadPoint, StoragePoint, RemoteDockPoint, GarageInspectPoint;
+        /// <summary>Power/comms cluster point, mirrored to the north side on levels with PowerNorth.</summary>
+        public Vector3 Pw(float x, float z) => OnGround(x, Levels.Current.PowerNorth ? -z : z);
+        /// <summary>Garage group point (garage, rover, RC-1 dock), mirrored to the south side on levels with GarageSouth.</summary>
+        public Vector3 Gz(float x, float z) => OnGround(x, Levels.Current.GarageSouth ? -z : z);
         public Vector3 RoverStart { get; private set; }
         public Vector3 SeisCratePoint { get; private set; }
         public Transform SunDisk, SunCorona, Earth, Stars;
@@ -68,18 +73,27 @@ namespace Mohakash
                 if (d < 1f) h -= depth * (1f - d * d);
                 h += depth * 0.30f * Mathf.Exp(-((d - 1f) * (d - 1f)) / 0.045f);
             }
-            float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(55f, 95f, Mathf.Sqrt(x * x + z * z)));   // keep the outpost area flat
-            return h * fade;
+            return h;
         }
 
+        /// <summary>Terrain height at outpost-local (x, z). Each level lands on its own patch of the landscape (LevelDef.LandOffset/LandYaw);
+        /// the outpost is always at (0, 0) and small craters fade out around it.</summary>
         public static float RawHeight(float x, float z)
+        {
+            var lv = Levels.Current;
+            var u = (Vector2)(Quaternion.Euler(0f, 0f, lv.LandYaw) * new Vector2(x, z)) + lv.LandOffset;
+            float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(55f, 95f, Mathf.Sqrt(x * x + z * z)));   // keep the outpost area flat
+            return LandHeight(u.x, u.y, fade);
+        }
+
+        static float LandHeight(float x, float z, float craterFade)
         {
             float h = 38f * Mathf.Exp(-(z * z) / (230f * 230f)) + 0.012f * x;
             h += 6f * (Mathf.PerlinNoise(x * 0.004f + 11f, z * 0.004f + 7f) - 0.5f);
             h += 1.6f * (Mathf.PerlinNoise(x * 0.03f + 3f, z * 0.03f + 5f) - 0.5f);
             h += 0.35f * (Mathf.PerlinNoise(x * 0.18f, z * 0.18f) - 0.5f);
 
-            h += SmallCraters(x, z);
+            h += SmallCraters(x, z) * craterFade;
 
             foreach (var c in Craters)
             {
@@ -384,6 +398,25 @@ namespace Mohakash
             horizonHaze = BuildHorizonHaze();
         }
 
+        /// <summary>Mars levels: same terrain and outpost, red ground, butterscotch sky with haze, no Earth in the sky.</summary>
+        public bool Mars { get; private set; }
+        static readonly Color MarsGround = new Color(0.95f, 0.55f, 0.36f), MarsSky = new Color(0.62f, 0.44f, 0.32f);
+        public void MakeMars()
+        {
+            Mars = true;
+            var tinted = new Dictionary<Material, Material>();
+            foreach (var r in GetComponentsInChildren<Renderer>(true))
+            {
+                var m = r.sharedMaterial;
+                if (m == null || !m.HasProperty("_BaseColor") || r.transform == SunDisk || r.transform == SunCorona || r.transform == Earth) continue;
+                if (Stars != null && r.transform.IsChildOf(Stars) || horizonHaze != null && r.transform.IsChildOf(horizonHaze)) continue;
+                if (!tinted.TryGetValue(m, out var t)) { t = new Material(m); t.SetColor("_BaseColor", m.GetColor("_BaseColor") * MarsGround); tinted[m] = t; }
+                r.sharedMaterial = t;   // clone: never edit the shared Resources material
+            }
+            if (Earth) Earth.gameObject.SetActive(false);
+            RenderSettings.fog = true; RenderSettings.fogMode = FogMode.Exponential; RenderSettings.fogDensity = 0.0025f;
+        }
+
         Transform MakeDisk(string name, string matPath, float scale)
         {
             var t = GameObject.CreatePrimitive(PrimitiveType.Sphere).transform;
@@ -574,6 +607,16 @@ namespace Mohakash
             RenderSettings.ambientSkyColor *= k;
             RenderSettings.ambientEquatorColor *= k;
             RenderSettings.ambientGroundColor *= k;
+            if (Mars)
+            {
+                var tint = new Color(1.25f, 0.9f, 0.7f);
+                RenderSettings.ambientSkyColor *= tint; RenderSettings.ambientEquatorColor *= tint; RenderSettings.ambientGroundColor *= tint;
+                Sun.color *= new Color(1f, 0.88f, 0.75f);
+                var sky = Color.Lerp(new Color(0.02f, 0.015f, 0.02f), MarsSky, daylight);
+                RenderSettings.fogColor = sky;
+                if (Camera.main) Camera.main.backgroundColor = sky;
+                if (Stars) Stars.gameObject.SetActive(daylight < 0.25f);
+            }
         }
 
         void LateUpdate()
@@ -602,7 +645,7 @@ namespace Mohakash
 
         void ScatterRocks()
         {
-            var rnd = new System.Random(7);
+            var rnd = new System.Random(Levels.Current.RockSeed);
             string[] small = { "Rock", "Rock_34W5ymEePk", "Rock_b7gRkv0cEa" };
             string[] large = { "RockLarge", "RockLarge_d2VWOdthtR" };
             var rockMat = Resources.Load<Material>("Materials/MoonRock");
@@ -655,37 +698,44 @@ namespace Mohakash
             HatchPanelPoint = hab0 + new Vector3(14.9f, 0.33f, -1.4f);
 
             // outpost hardware modelled on NASA references (tools/structures_v2/nasa_structs.py), real size, origin on the ground
-            if (kit.Has("OGS")) AddBoxCollider(Spawn("OxygenPlant", OnGround(-14f, -6f), Quaternion.Euler(0, 90, 0), 1f, root, "OGS - Oxygen Generation (electrolysis) plant"), 0.9f);
+            // per-level yard (LevelDef): the power/comms cluster and the garage group can swap north/south (z mirror),
+            // storage and the solar line are placed per level. The points are set even when not packed (maps, inspects).
+            var lv = Levels.Current;
+            OgsPoint = Pw(-14f, -6f); BatteryPoint = Pw(-13f, -12f); O2TanksPoint = Pw(-16f, 3.9f); WaterTankPoint = Pw(-16f, 8f);
+            ComPoint = Pw(-6f, -8f); RadPoint = Pw(6f, -8f);
+            StoragePoint = OnGround(lv.Storage.x, lv.Storage.y);
+            GaragePoint = Gz(2f, 17f); RoverStart = Gz(9f, 17f); RemoteDockPoint = Gz(14f, 17f); GarageInspectPoint = Gz(2f, 21f);
+
+            if (kit.Has("OGS")) AddBoxCollider(Spawn("OxygenPlant", OgsPoint, Quaternion.Euler(0, 90, 0), 1f, root, "OGS - Oxygen Generation (electrolysis) plant"), 0.9f);
             if (kit.Has("STO"))
             {
-                var sto = Spawn("LogisticsPallet", OnGround(-6f, 11f), Quaternion.Euler(0, 20, 0), 1f, root, "STO - Logistics pallet (storage)");
+                var sto = Spawn("LogisticsPallet", StoragePoint, Quaternion.Euler(0, lv.StorageYaw, 0), 1f, root, "STO - Logistics pallet (storage)");
                 AddBoxCollider(sto, 0.85f);
             }
-            if (kit.Has("COM")) Spawn("CommsTerminal", OnGround(-6f, -8f), Quaternion.Euler(0, EarthAzimuth, 0), 1f, root, "COM - Surface comm terminal (dish on Earth)");
-            if (kit.Has("RAD")) Spawn("RadiationStation", OnGround(6f, -8f), Quaternion.identity, 1f, root, "RAD - Radiation monitor station");
+            if (kit.Has("COM")) Spawn("CommsTerminal", ComPoint, Quaternion.Euler(0, EarthAzimuth, 0), 1f, root, "COM - Surface comm terminal (dish on Earth)");
+            if (kit.Has("RAD")) Spawn("RadiationStation", RadPoint, Quaternion.identity, 1f, root, "RAD - Radiation monitor station");
 
             if (kit.Has("GAR"))
             {
-                var gar = Spawn("RoverGarage", OnGround(2f, 26f), Quaternion.Euler(0, 180, 0), 1f, root, "GAR - Rover garage (shielded shelter + charger)");
+                var gar = Spawn("RoverGarage", Gz(2f, 26f), Quaternion.Euler(0, lv.GarageSouth ? 0 : 180, 0), 1f, root, "GAR - Rover garage (shielded shelter + charger)");   // door faces the habitat
                 AddBoxCollider(gar, 0.85f);
             }
-            GaragePoint = OnGround(2f, 17f);
-            RoverStart = OnGround(9f, 17f);
 
             int arrays = kit.Count("SOL-S");
             for (int i = 0; i < arrays; i++)
             {
-                var a = Spawn("SolarArrayVSAT", OnGround(-9f + i * 5f, -17f), Quaternion.identity, 1f, root, $"SOL-S Vertical Solar Array {i + 1}");
+                var sp = lv.SolarStart + i * lv.SolarStep;
+                var a = Spawn("SolarArrayVSAT", OnGround(sp.x, sp.y), Quaternion.identity, 1f, root, $"SOL-S Vertical Solar Array {i + 1}");
                 if (a) { SolarArrays.Add(a.transform); AddBoxCollider(a); var st = a.AddComponent<SunTracker>(); st.Sun = Sun; }
             }
             for (int i = 0; i < kit.Count("BAT"); i++)
-                AddBoxCollider(Spawn("LunarBattery", OnGround(-13f - i * 2.2f, -12f), Quaternion.identity, 1f, root, "BAT - Battery module"));
+                AddBoxCollider(Spawn("LunarBattery", Pw(-13f - i * 2.2f, -12f), Quaternion.identity, 1f, root, "BAT - Battery module"));
             for (int i = 0; i < kit.Count("TNK-O"); i++)
-                Spawn("OxygenTank", OnGround(-16f, 3f + i * 1.8f), Quaternion.identity, 1f, root, "TNK-O - Oxygen tank");
+                Spawn("OxygenTank", Pw(-16f, 3f + i * 1.8f), Quaternion.identity, 1f, root, "TNK-O - Oxygen tank");
             if (kit.Has("TNK-W"))
-                Spawn("WaterTank", OnGround(-16f, 8f), Quaternion.identity, 1f, root, "TNK-W - Water tank");
+                Spawn("WaterTank", WaterTankPoint, Quaternion.identity, 1f, root, "TNK-W - Water tank");
 
-            var lander = Spawn("Spaceship", OnGround(-30f, 18f, 0.3f), Quaternion.Euler(0, 140, 0), 1.1f, root, "Lander");
+            var lander = Spawn("Spaceship", OnGround(lv.Lander.x, lv.Lander.y, 0.3f), Quaternion.Euler(0, lv.LanderYaw, 0), 1.1f, root, "Lander");
             AddBoxCollider(lander, 0.9f);
 
             BuildOutpostLights(root);
@@ -700,11 +750,13 @@ namespace Mohakash
             var metal = new Material(Shader.Find("Universal Render Pipeline/Lit")); metal.color = new Color(0.55f, 0.56f, 0.58f); metal.SetFloat("_Metallic", 0.85f); metal.SetFloat("_Smoothness", 0.55f);
             var padMat = new Material(Shader.Find("Universal Render Pipeline/Lit")); padMat.color = new Color(0.32f, 0.31f, 0.30f); padMat.SetFloat("_Smoothness", 0.15f);
             // landing pad
-            var padPos = OnGround(-30f, 18f, 0f);
+            var lp = Levels.Current.Lander;
+            var padPos = OnGround(lp.x, lp.y, 0f);
             var pad = GameObject.CreatePrimitive(PrimitiveType.Cylinder); pad.name = "Landing Pad";
             pad.transform.SetParent(root); pad.transform.position = padPos + Vector3.up * 0.05f; pad.transform.localScale = new Vector3(16f, 0.06f, 16f);
             pad.GetComponent<Renderer>().sharedMaterial = padMat; Destroy(pad.GetComponent<Collider>());
-            Vector3[] masts = { new Vector3(-24f, 0, 10f), new Vector3(-37f, 0, 11f), new Vector3(-36f, 0, 26f), new Vector3(-23f, 0, 25f), new Vector3(6f, 0, -8f), new Vector3(14f, 0, 12f) };
+            var lo = new Vector3(lp.x + 30f, 0f, lp.y - 18f);   // pad masts follow the lander (laid out for (-30, 18))
+            Vector3[] masts = { new Vector3(-24f, 0, 10f) + lo, new Vector3(-37f, 0, 11f) + lo, new Vector3(-36f, 0, 26f) + lo, new Vector3(-23f, 0, 25f) + lo, RadPoint, new Vector3(14f, 0, 12f) };
             int n = 0;
             foreach (var m in masts)
             {
@@ -730,16 +782,58 @@ namespace Mohakash
         public static GameObject Spawn(string model, Vector3 pos, Quaternion rot, float scale, Transform parent, string label = null)
         {
             var prefab = Resources.Load<GameObject>("Models/" + model);
-            if (prefab == null)
+            var hd = Resources.Load<GameObject>("Models/HD/" + model);
+            if (prefab == null && hd == null)
             {
                 Debug.LogWarning("Missing model " + model);
                 return null;
             }
+            if (hd != null) return SpawnHd(hd, prefab, pos, rot, scale, parent, label ?? model, HdYaw(model));
             var go = Object.Instantiate(prefab, pos, rot, parent);
             go.transform.localScale = Vector3.one * scale;
             go.name = label ?? model;
             ModelMaterialFixer.Fix(go);
             return go;
+        }
+
+        /// <summary>HD meshes whose front is not +Z after import (glTFast maps glTF +X to Unity -X): yaw that turns the nose to +Z.</summary>
+        static float HdYaw(string model) => model == "Rover" ? 90f : 0f;   // Rover.glb (HD) nose is glTF +X
+
+        /// <summary>Models/HD/X (the user's detailed models, decimated with tools/chibi_astronaut/decimate.py) replaces Models/X:
+        /// fitted to the old model's size (largest side) and standing on the same ground point, so positions, colliders and
+        /// walk distances stay as they were. HD-only models are ~1 m on their largest side, so `scale` is their size in metres.</summary>
+        static GameObject SpawnHd(GameObject hd, GameObject old, Vector3 pos, Quaternion rot, float scale, Transform parent, string label, float yaw = 0f)
+        {
+            var root = new GameObject(label).transform;
+            root.SetPositionAndRotation(pos, rot); root.SetParent(parent, true); root.localScale = Vector3.one * scale;
+            var nb = LocalBounds(hd);
+            var ob = old != null ? LocalBounds(old) : new Bounds(new Vector3(0f, 0.5f, 0f), Vector3.one);
+            float k = Max(ob.size) / Mathf.Max(0.0001f, Max(nb.size));
+            var child = Object.Instantiate(hd, root, false).transform;
+            var q = Quaternion.Euler(0f, yaw, 0f);
+            child.localScale = Vector3.one * k; child.localRotation = q;
+            child.localPosition = new Vector3(ob.center.x, ob.min.y, ob.center.z) - q * new Vector3(nb.center.x, nb.min.y, nb.center.z) * k;
+            ModelMaterialFixer.Fix(root.gameObject);
+            return root.gameObject;
+        }
+
+        static float Max(Vector3 v) => Mathf.Max(v.x, Mathf.Max(v.y, v.z));
+
+        /// <summary>Mesh bounds of a model in its own root space (works on prefab assets, nothing instantiated).</summary>
+        static Bounds LocalBounds(GameObject root)
+        {
+            var w2l = root.transform.worldToLocalMatrix; bool any = false; var b = new Bounds();
+            foreach (var mf in root.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (mf.sharedMesh == null) continue;
+                var mb = mf.sharedMesh.bounds; var mtx = w2l * mf.transform.localToWorldMatrix;
+                for (int i = 0; i < 8; i++)
+                {
+                    var c = mtx.MultiplyPoint3x4(mb.center + Vector3.Scale(mb.extents, new Vector3((i & 1) != 0 ? 1 : -1, (i & 2) != 0 ? 1 : -1, (i & 4) != 0 ? 1 : -1)));
+                    if (!any) { b = new Bounds(c, Vector3.zero); any = true; } else b.Encapsulate(c);
+                }
+            }
+            return any ? b : new Bounds(Vector3.zero, Vector3.one);
         }
 
         public static void AddBoxCollider(GameObject go, float shrink = 1f)

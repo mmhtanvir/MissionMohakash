@@ -59,7 +59,7 @@ namespace Mohakash
             if (m.Hour + DelayH > MissionModel.DurationH) return "Too late: the drone would arrive after the mission ends.";
             Calls++;
             Pending.Add((m.Hour + DelayH, cart.ToList()));
-            m.Log(Severity.Info, $"Gateway: cargo drone launched with {string.Join(", ", cart.Select(i => i.Name))} ({kg:0} kg). Arrival at hour {m.Hour + DelayH:0}.");
+            m.Log(Severity.Info, $"A supply drone is on its way with {string.Join(", ", cart.Select(i => i.Name))}. It lands at hour {m.Hour + DelayH:0}.");
             return null;
         }
 
@@ -69,7 +69,7 @@ namespace Mohakash
             {
                 if (m.Hour < Pending[i].due) continue;
                 foreach (var it in Pending[i].items) it.Deliver(m);
-                m.Log(Severity.Good, $"Gateway drone landed: {string.Join(", ", Pending[i].items.Select(x => x.Name))} added to the habitat stores.");
+                m.Log(Severity.Good, $"The supply drone landed! You got {string.Join(", ", Pending[i].items.Select(x => x.Name))}.");
                 Pending.RemoveAt(i);
             }
         }

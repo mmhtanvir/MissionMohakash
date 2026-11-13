@@ -68,13 +68,13 @@ namespace Mohakash
             if (Fault == Fault.Tracker) { PointingErrDeg = UnityEngine.Random.Range(5f, 9f); AntennaCondition = 0.6f; }
             else { CableLossDb = 5f; AntennaCondition = 0.7f; }
 
-            Nodes.Add(new CommsNode { Id = "EARTH", Name = "Earth / Mission Control", Kind = NodeKind.Earth, Type = "Earth ground network", Services = "Voice, status telemetry, science-data routing" });
-            Nodes.Add(new CommsNode { Id = "R1", Name = "Relay R-1", Kind = NodeKind.Relay, Type = "Lunar relay spacecraft (elliptical orbit)", Services = "Store-and-forward relay, S-band to the surface, X-band trunk to Earth" });
-            Nodes.Add(new CommsNode { Id = "GW", Name = "Lunar Gateway", Kind = NodeKind.Station, Type = "Lunar-orbiting station (planned)", Services = "Cargo drone resupply (Tab > Call Gateway)" });
-            Nodes.Add(new CommsNode { Id = "OUT", Name = "First Light Outpost", Kind = NodeKind.Outpost, Type = "Surface station", Services = "Voice, telemetry, science upload; surface UHF" });
-            if (rover() != null) Nodes.Add(new CommsNode { Id = "ROVER", Name = "Rover", Kind = NodeKind.Rover, Type = "Surface station (mobile)", Services = "UHF to the outpost, line of sight only" });
+            Nodes.Add(new CommsNode { Id = "EARTH", Name = "Earth (Mission Control)", Kind = NodeKind.Earth, Type = "The people helping you from Earth", Services = "Talking, base messages, science" });
+            Nodes.Add(new CommsNode { Id = "R1", Name = "Satellite R-1", Kind = NodeKind.Relay, Type = "A satellite flying around the Moon", Services = "Passes your messages on to Earth" });
+            Nodes.Add(new CommsNode { Id = "GW", Name = "Space station", Kind = NodeKind.Station, Type = "A space station around the Moon", Services = "Sends supply drones (Tab > Call for supplies)" });
+            Nodes.Add(new CommsNode { Id = "OUT", Name = "Your base", Kind = NodeKind.Outpost, Type = "Your home on the surface", Services = "Talking, base messages, science" });
+            if (rover() != null) Nodes.Add(new CommsNode { Id = "ROVER", Name = "Rover", Kind = NodeKind.Rover, Type = "Your space car", Services = "Short-range radio: works only if no hill is in the way" });
             for (int i = 0; i < sites.Length; i++)
-                Nodes.Add(new CommsNode { Id = "SITE" + i, Name = "Site " + siteNames[i] + (i == CraterIndex ? " (crater proxy)" : ""), Kind = NodeKind.Site, Type = "Survey point", Services = "UHF line of sight only" });
+                Nodes.Add(new CommsNode { Id = "SITE" + i, Name = "Site " + siteNames[i] + (i == CraterIndex ? " (low ground)" : ""), Kind = NodeKind.Site, Type = "A place to explore", Services = "Short-range radio: works only if no hill is in the way" });
             Enabled = true; lastHour = m.Hour; Evaluate();
         }
 
@@ -141,91 +141,91 @@ namespace Mohakash
             void Surface(string a, string b, string nm, Vector3 pa, Vector3 pb)
             {
                 var s = Add(a, b, nm); float c = Seg(pa, pb, out s.Block);
-                if (!powered) { s.State = LinkState.Unavailable; s.Reason = "COM terminal has no power."; }
+                if (!powered) { s.State = LinkState.Unavailable; s.Reason = "The radio has no power."; }
                 else if (c < 0f)
                 {
                     s.State = LinkState.Unavailable; s.HasBlock = true;
-                    s.Reason = $"Terrain blocks the path: a ridge rises {-c:0.0} m above the line of sight, {Vector3.Distance(pa, s.Block):0} m from the antenna.";
+                    s.Reason = $"A hill is in the way, {Vector3.Distance(pa, s.Block):0} m from the antenna.";
                 }
                 else
                 {
                     s.RateMbps = c < 3f ? 0.256f : 2f; s.LatencyS = Vector3.Distance(pa, pb) / 299792458f;
                     s.State = c < 3f ? LinkState.Weak : LinkState.Verified;
-                    s.Reason = c < 3f ? "Grazing clearance: reduced rate." : "Clear line of sight.";
+                    s.Reason = c < 3f ? "Only just clear of the hill: the signal is weak." : "Nothing in the way.";
                 }
             }
 
             // Outpost <-> Earth, direct (S-band)
-            var e1 = Add("OUT", "EARTH", "Direct to Earth (S-band)");
+            var e1 = Add("OUT", "EARTH", "Base straight to Earth");
             float cl = Ray(ant, MoonWorld.EarthAzimuth, MoonWorld.EarthElevation, 500f, out e1.Block);
             if (!powered)
             {
-                e1.State = LinkState.Unavailable; e1.Reason = "COM terminal has no power.";
+                e1.State = LinkState.Unavailable; e1.Reason = "The radio has no power.";
             }
             else if (cl < 0f)
             {
                 e1.State = LinkState.Unavailable; e1.HasBlock = true;
-                e1.Reason = $"Terrain blocks the path to Earth: a ridge rises {-cl:0.0} m above the line of sight, {Vector3.Distance(ant, e1.Block):0} m from the antenna.";
+                e1.Reason = $"A hill blocks the way to Earth, {Vector3.Distance(ant, e1.Block):0} m from the antenna.";
             }
             else
             {
                 float loss = 12f * Mathf.Pow(PointingErrDeg / 9.5f, 2f) + CableLossDb + (cl < 3f ? 6f : 0f);
                 Pick(e1, 22f + 30f - Fspl(384400f, 2200f) + 228.6f - 60f - loss, 10f);
                 e1.LatencyS = 1.3f; Grade(e1, 1f, cl);
-                e1.Reason = e1.RateMbps <= 0f ? "Signal below threshold." :
-                    loss < 1f ? "Clear line of sight, nominal link budget." :
-                    $"{loss:0.0} dB of loss: " + (PointingErrDeg > 1f ? $"antenna {PointingErrDeg:0.0} deg off target." :
-                    CableLossDb > 1f ? $"feed connector loss {CableLossDb:0.0} dB." : "grazing terrain clearance.");
+                e1.Reason = e1.RateMbps <= 0f ? "The signal is too weak to reach Earth." :
+                    loss < 1f ? "Nothing in the way. Strong signal!" :
+                    "The signal is weak: " + (PointingErrDeg > 1f ? "the antenna is not pointing at Earth. Press 'Fix the aim'." :
+                    CableLossDb > 1f ? "the antenna cable is loose. Press 'Fix the cable'." : "a hill is almost in the way.");
             }
 
             // Outpost <-> relay R-1 (window-limited)
-            var r1 = Add("OUT", "R1", "Outpost to relay R-1 (S-band)");
+            var r1 = Add("OUT", "R1", "Base to satellite R-1");
             float rel = RelayEl(h), rc = rel > 3f ? Ray(ant, RelayAz(h), rel, 500f, out r1.Block) : -99f;
             if (!powered)
             {
-                r1.State = LinkState.Unavailable; r1.Reason = "COM terminal has no power.";
+                r1.State = LinkState.Unavailable; r1.Reason = "The radio has no power.";
             }
             else if (rc < 0f)
             {
                 r1.HasBlock = rel > 3f; r1.NextWindowH = NextWindow(ant, h);
                 r1.State = r1.NextWindowH >= 0f ? LinkState.Waiting : LinkState.Unavailable;
-                string win = r1.NextWindowH >= 0f ? $" Next window in {r1.NextWindowH:0.0} h." : " No window in the next 24 h.";
-                r1.Reason = (rel <= 3f ? "R-1 is below the local horizon (orbit geometry)." : $"Terrain blocks R-1 ({-rc:0.0} m above the line of sight).") + win;
+                string win = r1.NextWindowH >= 0f ? $" It comes back in {r1.NextWindowH:0.0} hours." : " It won't come back today.";
+                r1.Reason = (rel <= 3f ? "R-1 is below the horizon right now." : "A hill hides R-1.") + win;
             }
             else
             {
                 Pick(r1, 22f + 8f - Fspl(RelayKm(h), 2200f) + 228.6f - 60f - CableLossDb - (rc < 3f ? 6f : 0f), 10f);
                 r1.LatencyS = 0.02f; Grade(r1, 1f, rc);
-                r1.Reason = $"R-1 at {rel:0} deg elevation, {RelayKm(h):0} km: link up.";
+                r1.Reason = $"R-1 is up in the sky, {RelayKm(h):0} km away. It can hear you!";
             }
 
-            var tr = Add("R1", "EARTH", "Relay trunk to Earth (X-band)");
+            var tr = Add("R1", "EARTH", "Satellite R-1 to Earth");
             tr.State = LinkState.Verified; tr.RateMbps = 4f; tr.LatencyS = 1.3f;
-            tr.Reason = "The relay spacecraft keeps its own Earth link.";
+            tr.Reason = "The satellite can always talk to Earth.";
 
-            var gw = Add("GW", "OUT", "Gateway-class station");
+            var gw = Add("GW", "OUT", "Space station");
             gw.State = LinkState.Unavailable;
-            gw.Reason = "Planned lunar-orbiting station: not in service in this scenario.";
+            gw.Reason = "This space station is not built yet.";
 
             for (int i = 0; i < SitePos.Length; i++)
-                Surface("OUT", "SITE" + i, "Outpost to site " + SiteName[i] + " (UHF)", ant, SitePos[i] + Vector3.up * SiteAntH);
+                Surface("OUT", "SITE" + i, "Base to site " + SiteName[i], ant, SitePos[i] + Vector3.up * SiteAntH);
 
             var rv = RoverPos();
-            if (rv.HasValue) Surface("OUT", "ROVER", "Outpost to rover (UHF)", ant, rv.Value + Vector3.up * SiteAntH);
+            if (rv.HasValue) Surface("OUT", "ROVER", "Base to rover", ant, rv.Value + Vector3.up * SiteAntH);
 
             if (CraterIndex >= 0)
             {
                 var sp = SitePos[CraterIndex] + Vector3.up * SiteAntH;
-                var cr = Add("SITE" + CraterIndex, "R1", "Crater site to relay R-1 (direct)");
+                var cr = Add("SITE" + CraterIndex, "R1", "Low site to satellite R-1");
                 float cc = rel > 3f ? Ray(sp, RelayAz(h), rel, 300f, out cr.Block) : -99f;
                 if (cc < 0f)
                 {
                     cr.HasBlock = rel > 3f; cr.NextWindowH = NextWindow(sp, h);
                     cr.State = cr.NextWindowH >= 0f ? LinkState.Waiting : LinkState.Unavailable;
-                    cr.Reason = (rel <= 3f ? "R-1 is below the horizon." : "The crater wall blocks R-1.") +
-                                (cr.NextWindowH >= 0f ? $" Next window in {cr.NextWindowH:0.0} h." : " Deploy a relay on the rim.");
+                    cr.Reason = (rel <= 3f ? "R-1 is below the horizon." : "The crater wall hides R-1.") +
+                                (cr.NextWindowH >= 0f ? $" It comes back in {cr.NextWindowH:0.0} hours." : " Put a relay radio on the rim.");
                 }
-                else { cr.RateMbps = 1f; cr.LatencyS = 0.02f; cr.State = LinkState.Verified; cr.Reason = "Direct view of R-1."; }
+                else { cr.RateMbps = 1f; cr.LatencyS = 0.02f; cr.State = LinkState.Verified; cr.Reason = "It can see R-1!"; }
             }
 
             var rl = Link("OUT", "R1");
@@ -254,57 +254,57 @@ namespace Mohakash
         public string Inspect()
         {
             Inspected = true; var e = Link("OUT", "EARTH");
-            return $"Terminal {(m.Load("COM")?.Powered == true ? "powered" : "NO POWER")}; antenna {AntennaCondition:0%}; " +
-                   $"feed loss {CableLossDb:0.0} dB; tracker error {PointingErrDeg:0.0} deg; " +
-                   $"line of sight {(e != null && !e.HasBlock ? "clear" : "OBSTRUCTED")}; " +
-                   $"SNR {e?.SnrDb:0.0} dB, margin {e?.MarginDb:0.0} dB, {e?.RateMbps:0.###} Mbps.";
+            return $"Radio check: power {(m.Load("COM")?.Powered == true ? "OK" : "OFF (turn it on with Tab)")}, " +
+                   $"aim {(PointingErrDeg > 1.5f ? "WRONG (press Fix the aim)" : "OK")}, " +
+                   $"cable {(CableLossDb > 1f ? "LOOSE (press Fix the cable)" : "OK")}, " +
+                   $"view of Earth {(e != null && !e.HasBlock ? "clear" : "BLOCKED by a hill")}.";
         }
 
         public string Rehome()
         {
-            if (Fault != Fault.Tracker) return "Tracker re-homed: no change, no pointing fault found.";
+            if (Fault != Fault.Tracker) return "The aim was already fine.";
             Fault = Fault.None; PointingErrDeg = 0f; AntennaCondition = 1f; Evaluate(); Persist();
-            return "Tracker re-homed: pointing error 0.0 deg. Auto-tracking nominal.";
+            return "Fixed! The antenna points at Earth again.";
         }
 
         public string Reseat()
         {
-            if (Fault != Fault.Connector) return "Feed connector reseated: no change, cable loss was already nominal.";
+            if (Fault != Fault.Connector) return "The cable was already fine.";
             Fault = Fault.None; CableLossDb = 0f; AntennaCondition = 1f; Evaluate(); Persist();
-            return "Feed connector reseated: loss 0.0 dB.";
+            return "Fixed! The cable is plugged in tight.";
         }
 
         public string Establish()
         {
-            if (m.Load("COM")?.Powered != true) return "Cannot establish: the COM terminal has no power.";
-            if (Fault != Fault.None) return "Cannot establish: the antenna is faulty. Run diagnostics, then re-home the tracker or reseat the feed connector.";
-            if (BestRateMbps <= 0f) return "No path to Earth right now. See the paths view for the reason and next window.";
+            if (m.Load("COM")?.Powered != true) return "Can't connect: the radio has no power. Turn it on with Tab.";
+            if (Fault != Fault.None) return "Can't connect: something is wrong with the antenna. Press 'Check the radio' to find out what.";
+            if (BestRateMbps <= 0f) return "There is no way to reach Earth right now. Look at 'Ways to reach Earth' to see why.";
             LinkEstablished = true;
-            return $"Link established with Mission Control via {(ViaDirect ? "direct-to-Earth" : "relay R-1")}.";
+            return $"Connected to Mission Control {(ViaDirect ? "straight to Earth" : "through satellite R-1")}!";
         }
 
         public string SendPacket()
         {
-            if (!LinkEstablished) return "Establish the link first.";
-            if (BestRateMbps <= 0f) return "Link is down: packet queued for the next contact.";
+            if (!LinkEstablished) return "Connect to Earth first.";
+            if (BestRateMbps <= 0f) return "No connection right now. Your message will wait and go later.";
             PacketAcked = true; EarthLinkVerified = true; Persist();
-            return $"Telemetry packet acknowledged by Mission Control (round trip {2f * LatencyBest + 0.4f:0.0} s).";
+            return $"Mission Control says hello back! (It took {2f * LatencyBest + 0.4f:0.0} seconds there and back.)";
         }
 
         public string Check(string svc)
         {
-            if (!LinkEstablished || BestRateMbps <= 0f) return "No established link: cannot test.";
+            if (!LinkEstablished || BestRateMbps <= 0f) return "Connect to Earth first.";
             float need = svc == "voice" ? 0.032f : svc == "tlm" ? 0.256f : 1f;
-            string nm = svc == "voice" ? "Two-way voice" : svc == "tlm" ? "Status telemetry" : "Science-data upload";
+            string nm = svc == "voice" ? "Talking" : svc == "tlm" ? "Base messages" : "Science data";
             if (BestRateMbps < need)
-                return $"{nm} FAILED: link supports {BestRateMbps:0.###} Mbps, needs {need:0.###}. Diagnose the link (pointing, connector, terrain).";
+                return $"{nm} did NOT work: the signal is too weak. Press 'Check the radio'.";
             if (svc == "voice") VoiceOk = true; else if (svc == "tlm") TlmOk = true; else SciOk = true;
-            return $"{nm} verified at {BestRateMbps:0.###} Mbps.";
+            return $"{nm} works!";
         }
 
         public string FindRelaySite()
         {
-            if (CraterIndex < 0) return "No survey sites.";
+            if (CraterIndex < 0) return "There are no places to check.";
             var cp = SitePos[CraterIndex]; var ant = Antenna + Vector3.up * MastH;
             Vector3 best = cp; int bestScore = -1;
             for (int ix = -6; ix <= 6; ix++)
@@ -324,17 +324,17 @@ namespace Mohakash
                 }
             RelaySite = best; RelaySiteIdentified = bestScore >= 250; Persist();
             return RelaySiteIdentified
-                ? $"Relay site identified at x {best.x:0}, z {best.z:0}: sees the outpost, the crater floor and R-1."
-                : $"Best candidate x {best.x:0}, z {best.z:0} still misses a link. Survey more sites or wait for a window.";
+                ? "Found a good spot for a relay radio! It can see the base, the low site and R-1."
+                : "No perfect spot yet. Visit more places or try again later.";
         }
 
         public string SaveResults()
         {
-            if (!EarthLinkVerified || !VoiceOk) return "Not saved: verify the Earth link and two-way voice first.";
+            if (!EarthLinkVerified || !VoiceOk) return "Not saved yet: send a hello message and test talking first.";
             CommunicationsTestComplete = true; Persist();
-            return $"Link map saved for Mission 2: {Links.Count(l => l.State == LinkState.Verified)} verified, " +
-                   $"{Links.Count(l => l.State == LinkState.Unavailable)} unavailable, " +
-                   $"relay site {(RelaySiteIdentified ? "identified" : "NOT identified")}.";
+            return $"Saved! {Links.Count(l => l.State == LinkState.Verified)} ways work, " +
+                   $"{Links.Count(l => l.State == LinkState.Unavailable)} are blocked" +
+                   $"{(RelaySiteIdentified ? ", and you found a relay spot" : "")}.";
         }
 
         /// <summary>Call from the sample-site interaction: a radio check at that location.</summary>
@@ -344,8 +344,7 @@ namespace Mohakash
             Evaluate(); var l = Link("OUT", "SITE" + i); surveyed.Add(site);
             TerrainSurveyComplete = surveyed.Count >= 2;
             m.Log(l.State == LinkState.Verified ? Severity.Good : Severity.Warning,
-                $"Radio check at site {site}: direct link to the outpost is {l.State.ToString().ToUpper()}. {l.Reason}" +
-                (i == CraterIndex ? " (lowest ground: Mission 2 crater proxy)" : ""));
+                $"Radio check at site {site}: " + (l.State == LinkState.Verified ? "you can talk to the base from here. " : "the base can't hear you well from here. ") + l.Reason);
             Persist();
         }
 

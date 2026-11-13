@@ -331,7 +331,7 @@ namespace Mohakash
             // command console in the middle of the hub: round desk, mast, four screens facing out
             Prim(PrimitiveType.Cylinder, "Command console", new Vector3(0, 0.45f, 0), new Vector3(1.8f, 0.45f, 1.8f), steel, true);
             Prim(PrimitiveType.Cylinder, "Console top", new Vector3(0, 0.915f, 0), new Vector3(1.9f, 0.015f, 1.9f), wallDark, false);
-            Prim(PrimitiveType.Cylinder, "Console mast", new Vector3(0, 1.8f, 0), new Vector3(0.3f, 0.9f, 0.3f), steel, false);
+            Prim(PrimitiveType.Cylinder, "Console mast", new Vector3(0, 1.8f, 0), new Vector3(0.3f, 0.9f, 0.3f), steel, true);   // solid: the camera stops in front of it instead of ending up inside
             for (int i = 0; i < 4; i++)
             {
                 var q = Quaternion.Euler(0f, i * 90f, 0f);
@@ -426,6 +426,12 @@ namespace Mohakash
             Screen("Plan board", new Vector3(1.45f, 1.4f, 4.3f), new Vector3(0.9f, 0.6f, 0.05f), new Color(0.3f, 1f, 0.5f), 0);
             Station("Plan board", new Vector3(1.45f, 0, 3.5f), 0.9f, new Color(0.3f, 1f, 0.5f), () => "Open the mission plan and task list (or press J anywhere)", m.TogglePlan);
 
+            // remote rover desk against the hub's south-east corner panel, facing the console: opens the surface map with RC-1's position
+            grp = null;
+            MoonWorld.AddBoxCollider(MoonWorld.Spawn("RoverDesk", transform.TransformPoint(new Vector3(3.08f, 0f, -3.08f)), transform.rotation * Quaternion.Euler(0f, -45f, 0f), 1.5f, transform, "Rover desk"));
+            Station("Rover desk", new Vector3(2.45f, 0, -2.45f), 0.9f, new Color(1f, 0.6f, 0.2f),
+                () => $"Rover desk: see where remote rover RC-1 is ({m.Model.RemoteBattery:0}% battery). V takes the controller", m.ToggleRoverDesk);
+
             // ── crew quarters: two bunks (south wall), stowage (north wall) ──────────
             bunkFrame = Group("bunk");
             var mattress = Mat(new Color(0.30f, 0.40f, 0.55f), 0.2f, 0f);
@@ -436,12 +442,8 @@ namespace Mohakash
             Box("Bunk locker", new Vector3(-5.78f, 2.1f, 1.9f), new Vector3(0.4f, 0.7f, 2.0f), steel, false);
             Station("Bunk", new Vector3(-4.3f, 0, 1.9f), 1.5f, new Color(0.6f, 0.7f, 1f),
                 () => m.Model.Resting ? "Wake up" : $"Sleep (fatigue {m.Model.Fatigue:0}%, time runs 4x)", m.ToggleRest);
-            Group("bunk2");
-            Box("Bunk frame", new Vector3(-5.3f, 0.2f, 1.9f), new Vector3(1.1f, 0.4f, 2.1f), wallDark);
-            Box("Mattress", new Vector3(-5.3f, 0.5f, 1.9f), new Vector3(1.0f, 0.2f, 2.0f), mattress, false);
-            Box("Pillow", new Vector3(-5.3f, 0.66f, 2.7f), new Vector3(0.7f, 0.13f, 0.4f), white, false);
-            Box("Blanket (folded)", new Vector3(-5.3f, 0.64f, 1.2f), new Vector3(0.95f, 0.08f, 0.6f), orange, false);
-            Box("Bunk locker", new Vector3(-5.78f, 2.1f, 1.9f), new Vector3(0.4f, 0.7f, 2.0f), steel, false);
+            Group("bunk2");   // second bunk = the sleep pod model (the player's bunk stays primitive: the sleep pose needs its exact height)
+            MoonWorld.AddBoxCollider(MoonWorld.Spawn("Bed", grp.TransformPoint(new Vector3(-5.2f, 0f, 1.9f)), grp.rotation * Quaternion.Euler(0f, 90f, 0f), 2.2f, grp, "Sleep pod"));
             Group("crates");
             for (int i = 0; i < 3; i++)
                 MoonWorld.Spawn("PickupCrate", grp.TransformPoint(new Vector3(5.2f - (i % 2) * 0.9f, 0.4f + (i / 2) * 0.8f, -0.6f - (i % 2) * 0.2f)), grp.rotation * Quaternion.Euler(0, i * 15f, 0), 0.8f, grp, "Crate");

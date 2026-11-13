@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission Mohakash Main Menu</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600&amp;family=Rajdhani:wght@600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#03060c}
+.hud-line{fill:none;stroke:var(--hud,#4ea6ff);stroke-opacity:.45;stroke-width:1.5}
+.hud-bright{fill:none;stroke:var(--hud,#4ea6ff);stroke-width:3.5;stroke-linecap:square}
+.hud-tick{fill:none;stroke:var(--hud,#4ea6ff);stroke-opacity:.35;stroke-width:1.5}
+.hud-fill{fill:var(--hud,#4ea6ff)}
+
+.mm-item{position:relative;width:440px;height:60px;transition:transform .25s cubic-bezier(.2,.8,.2,1),filter .25s;animation:mm-in .55s cubic-bezier(.2,.8,.2,1) both}
+.mm-item:nth-child(2){animation-delay:.06s}
+.mm-item:nth-child(3){animation-delay:.12s}
+.mm-item:nth-child(4){animation-delay:.18s}
+.mm-item:nth-child(5){animation-delay:.24s}
+.mm-item:nth-child(6){animation-delay:.30s}
+.mm-btn{all:unset;box-sizing:border-box;display:block;width:100%;height:100%;cursor:pointer;padding:1.5px;background:rgba(110,175,255,.55);clip-path:polygon(10px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 10px);transition:clip-path .25s cubic-bezier(.2,.8,.2,1),background .25s}
+.mm-fill{position:relative;overflow:hidden;box-sizing:border-box;display:flex;align-items:center;gap:20px;width:100%;height:100%;padding:0 26px;color:#e8f1ff;background:linear-gradient(90deg,rgba(22,60,108,.94),rgba(10,30,60,.82));clip-path:polygon(10px 0,100% 0,100% calc(100% - 15px),calc(100% - 15px) 100%,0 100%,0 10px);transition:clip-path .25s cubic-bezier(.2,.8,.2,1),background .25s,padding .25s}
+.mm-ico{width:30px;height:30px;flex:none;color:#8cc8ff;transition:transform .35s cubic-bezier(.2,.8,.2,1),color .25s}
+.mm-label{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:31px;letter-spacing:.07em;line-height:1;padding-top:2px}
+.mm-sheen{position:absolute;top:0;bottom:0;left:-40%;width:28%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.32),transparent);transform:skewX(-20deg);pointer-events:none}
+
+.mm-item.is-on{transform:translateX(10px);filter:drop-shadow(0 0 14px rgba(255,128,28,.7));animation:mm-pulse 2.4s ease-in-out infinite}
+.is-on .mm-btn{background:#ffb066;clip-path:polygon(24px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,24px 100%,0 50%)}
+.is-on .mm-fill{padding-left:40px;color:#ffffff;background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.34) 100%),var(--accent,#c9560c);clip-path:polygon(23px 0,100% 0,100% calc(100% - 15px),calc(100% - 15px) 100%,23px 100%,1px 50%)}
+.is-on .mm-ico{color:#ffffff;transform:scale(1.12) rotate(-8deg)}
+.is-on .mm-sheen{animation:mm-sweep .8s ease-out}
+
+.mm-quit .mm-btn{background:rgba(255,100,116,.65)}
+.mm-quit .mm-fill{background:linear-gradient(90deg,rgba(124,20,36,.94),rgba(66,10,22,.84))}
+.mm-quit .mm-ico{color:#ff8b98}
+.mm-quit.is-on{filter:drop-shadow(0 0 14px rgba(255,60,80,.7));animation:mm-pulse-red 2.4s ease-in-out infinite}
+.mm-quit.is-on .mm-btn{background:#ff9aa6}
+.mm-quit.is-on .mm-fill{background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.3) 100%),#b4182c}
+
+.mm-btn:focus-visible .mm-label{text-decoration:underline;text-underline-offset:6px}
+.mm-btn:active .mm-fill{transform:scale(.985)}
+
+.mm-logo{animation:mm-float 6s ease-in-out infinite}
+
+@keyframes mm-in{from{opacity:0;transform:translateX(-40px)}to{opacity:1}}
+@keyframes mm-sweep{from{left:-40%}to{left:130%}}
+@keyframes mm-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes mm-pulse{0%,100%{filter:drop-shadow(0 0 10px rgba(255,128,28,.55))}50%{filter:drop-shadow(0 0 22px rgba(255,128,28,.9))}}
+@keyframes mm-pulse-red{0%,100%{filter:drop-shadow(0 0 10px rgba(255,60,80,.5))}50%{filter:drop-shadow(0 0 22px rgba(255,60,80,.85))}}
+@media (prefers-reduced-motion:reduce){.mm-item,.mm-item.is-on,.mm-logo,.is-on .mm-sheen{animation:none}}
+</style>
+</helmet>
+<div style="--accent: {{accent}}; --hud: {{hud}}; position: relative; width: 1920px; height: 1080px; overflow: hidden; background: radial-gradient(ellipse 70% 80% at 68% 58%, #182233 0%, #0a101b 55%, #03060c 100%); font-family: 'Exo 2', sans-serif; color: #e8f1ff">
+
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(90deg, rgba(3,8,16,.86) 0%, rgba(3,8,16,.6) 28%, rgba(3,8,16,0) 52%), linear-gradient(0deg, rgba(3,8,16,.6) 0%, rgba(3,8,16,0) 18%); pointer-events: none"></div>
+
+  <svg aria-hidden="true" width="1920" height="1080" viewBox="0 0 1920 1080" style="position: absolute; inset: 0; pointer-events: none">
+    <path class="hud-line" d="M60 24 H1860 L1896 60 V300 L1882 314 V760 L1896 774 V1020 L1860 1056 H60 L24 1020 V774 L38 760 V314 L24 300 V60 Z"></path>
+    <path class="hud-bright" d="M24 118 V60 L60 24 H150"></path>
+    <path class="hud-bright" d="M1770 24 H1860 L1896 60 V118"></path>
+    <path class="hud-bright" d="M24 962 V1020 L60 1056 H110"></path>
+    <path class="hud-bright" d="M1810 1056 H1860 L1896 1020 V962"></path>
+    <path class="hud-bright" d="M190 24 H232 M1690 24 H1732" style="stroke-width: 2"></path>
+    <path class="hud-tick" d="M48 340h8M48 364h8M48 388h8M48 412h8M48 436h8M48 460h8M48 484h12M48 508h8M48 532h8M48 556h8M48 580h8M48 604h8M48 628h8M48 652h8M48 676h8M48 700h8M48 724h8"></path>
+    <path class="hud-tick" d="M1864 340h8M1864 364h8M1864 388h8M1864 412h8M1864 436h8M1864 460h8M1860 484h12M1864 508h8M1864 532h8M1864 556h8M1864 580h8M1864 604h8M1864 628h8M1864 652h8M1864 676h8M1864 700h8M1864 724h8"></path>
+    <path class="hud-line" d="M62 74 H104 M83 53 V95" style="stroke-opacity: .6"></path>
+    <path class="hud-line" d="M8 492 H40 M24 476 V508" style="stroke-opacity: .6"></path>
+    <path class="hud-line" d="M1880 492 H1912 M1896 476 V508" style="stroke-opacity: .6"></path>
+    <path class="hud-line" d="M1690 92 H1880" style="stroke-opacity: .3"></path>
+    <path class="hud-line" d="M1680 1016 H1860" style="stroke-opacity: .35"></path>
+    <path class="hud-line" d="M58 1010 H128 M88 990 V1030" style="stroke-opacity: .45"></path>
+  </svg>
+
+  <div style="position: absolute; left: 92px; top: 100px; width: 470px; height: 60px">
+    <svg aria-hidden="true" width="470" height="60" viewBox="0 0 470 60" style="position: absolute; inset: 0">
+      <path class="hud-bright" d="M6 54 V22 L20 8 H54" style="stroke-width: 3"></path>
+      <path class="hud-line" d="M54 8 H372 L386 22 H398" style="stroke-opacity: .7"></path>
+      <path class="hud-line" d="M6 54 H306 L322 38 H452" style="stroke-opacity: .7"></path>
+      <circle class="hud-fill" cx="456" cy="38" r="3"></circle>
+    </svg>
+    <div style="position: absolute; left: 28px; top: 14px; font-family: 'Exo 2', sans-serif; font-weight: 500; font-size: 25px; letter-spacing: .02em; color: #a6d6ff; white-space: nowrap">NASA SPACE APPS 2026</div>
+  </div>
+
+  <div style="position: absolute; left: 96px; top: 168px; width: 660px; display: flex; flex-direction: column; gap: 0">
+    <img class="mm-logo" src="./assets/e88072ea98e62c26c8a4757d18596b21.png" alt="Mission Mohakash" style="width: 600px; height: auto; display: block; margin-left: -8px; filter: drop-shadow(0 6px 24px rgba(40,140,255,.35))">
+    <div style="margin-top: 6px; font-family: 'Exo 2', sans-serif; font-weight: 500; font-size: 34px; line-height: 1.2; color: #f2f7ff">Junior Astronaut Mission Trainer</div>
+    <div style="margin-top: 10px; font-family: 'Exo 2', sans-serif; font-weight: 400; font-size: 21px; letter-spacing: .02em; color: #a3b6cf">Plan. Build. Survive. Discover.</div>
+  </div>
+
+  <nav aria-label="Main menu" style="position: absolute; left: 96px; top: 520px; display: flex; flex-direction: column; gap: 14px">
+
+    <div class="mm-item {{cls.play}}">
+      <button class="mm-btn" type="button" onMouseEnter="{{pick.play}}" onFocus="{{pick.play}}">
+        <span class="mm-fill">
+          <svg class="mm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path></svg>
+          <span class="mm-label">PLAY</span>
+          <span class="mm-sheen"></span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mm-item {{cls.how}}">
+      <button class="mm-btn" type="button" onMouseEnter="{{pick.how}}" onFocus="{{pick.how}}">
+        <span class="mm-fill">
+          <svg class="mm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.4"></path><path d="M12 17h.01"></path></svg>
+          <span class="mm-label">HOW TO PLAY</span>
+          <span class="mm-sheen"></span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mm-item {{cls.controls}}">
+      <button class="mm-btn" type="button" onMouseEnter="{{pick.controls}}" onFocus="{{pick.controls}}">
+        <span class="mm-fill">
+          <svg class="mm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12h4M8 10v4"></path><path d="M15 13h.01"></path><path d="M18 11h.01"></path><path d="M17.32 5H6.68a4 4 0 0 0-3.98 3.59C2.6 9.42 2 14.46 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.41-1.41A2 2 0 0 1 9.83 16h4.34a2 2 0 0 1 1.41.59L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.55-.6-6.58-.69-7.26A4 4 0 0 0 17.32 5z"></path></svg>
+          <span class="mm-label">CONTROLS</span>
+          <span class="mm-sheen"></span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mm-item {{cls.settings}}">
+      <button class="mm-btn" type="button" onMouseEnter="{{pick.settings}}" onFocus="{{pick.settings}}">
+        <span class="mm-fill">
+          <svg class="mm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <span class="mm-label">SETTINGS</span>
+          <span class="mm-sheen"></span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mm-item {{cls.credits}}">
+      <button class="mm-btn" type="button" onMouseEnter="{{pick.credits}}" onFocus="{{pick.credits}}">
+        <span class="mm-fill">
+          <svg class="mm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="6"></circle><path d="m12 5.2.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 7.3l2-.3z"></path><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"></path></svg>
+          <span class="mm-label">CREDITS</span>
+          <span class="mm-sheen"></span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mm-item mm-quit {{cls.quit}}">
+      <button class="mm-btn" type="button" onMouseEnter="{{pick.quit}}" onFocus="{{pick.quit}}">
+        <span class="mm-fill">
+          <svg class="mm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"></path><path d="M9 16l-4-4 4-4"></path><path d="M5 12h11"></path></svg>
+          <span class="mm-label">QUIT</span>
+          <span class="mm-sheen"></span>
+        </span>
+      </button>
+    </div>
+
+  </nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c9560c","options":["#c9560c","#1166e0","#0e8f7e","#7c3aed"],"section":"Theme"},"hud":{"editor":"color","default":"#4ea6ff","options":["#4ea6ff","#38d9f5","#ffb066"],"section":"Theme"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var keys = ['play', 'how', 'controls', 'settings', 'credits', 'quit'];
+    var sel = (this.state && this.state.sel) || 'play';
+    var self = this;
+    var cls = {};
+    var pick = {};
+    keys.forEach(function (k) {
+      cls[k] = k === sel ? 'is-on' : '';
+      pick[k] = function () {
+        var cur = (self.state && self.state.sel) || 'play';
+        if (cur !== k) self.setState({ sel: k });
+      };
+    });
+    return {
+      accent: this.props.accent ?? '#c9560c',
+      hud: this.props.hud ?? '#4ea6ff',
+      cls: cls,
+      pick: pick
+    };
+  }
+}
+</script>
+</body>
+</html>

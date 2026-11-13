@@ -401,7 +401,7 @@ namespace Mohakash
             // ── Radiation monitor ─────────────────────────────────────────
             if (m.Kit != null && m.Kit.Has("RAD"))
             {
-                var radPos = m.World.OnGround(6f, -8f);
+                var radPos = m.World.RadPoint;
                 var radDot = MakeDot(mapContainer, 9, new Color(0.3f, 0.85f, 0.95f), "◉", tooltip: "Rad monitor");
                 icons.Add((radDot,
                     () => radPos,
@@ -429,7 +429,7 @@ namespace Mohakash
             }
 
             // ── Lander ────────────────────────────────────────────────────
-            var landerPos = m.World.OnGround(-30f, 18f);
+            var landerPos = m.World.OnGround(Levels.Current.Lander.x, Levels.Current.Lander.y);
             var landerDot = MakeDot(mapContainer, 11, new Color(0.7f, 0.5f, 1f), "▼", tooltip: "Lander");
             icons.Add((landerDot, () => landerPos, () => true));
         }

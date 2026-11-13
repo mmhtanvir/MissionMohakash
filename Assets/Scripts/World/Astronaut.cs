@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections;
 using System;
 using UnityEngine;
@@ -23,7 +24,8 @@ namespace Mohakash
         public const float RunSpeed   = 4.6f;
         public const float MoonGravity = 1.62f;
         public const float EarthGravity = 9.81f;   // inside the habitat (owner's choice: normal gravity indoors)
-        float Gravity => Indoors ? EarthGravity : MoonGravity;
+        public const float MarsGravity = 3.71f;
+        float Gravity => Indoors ? EarthGravity : Levels.Current.Mars ? MarsGravity : MoonGravity;
         public const float Height      = 1.8f;
 
         /// <summary>true: the suited astronaut changes into the casual crew model inside the habitat. false: the suited astronaut stays (and sleeps in the bunk too).</summary>
@@ -112,12 +114,20 @@ namespace Mohakash
             return a;
         }
 
+        public static float ChibiHead = 1.7f, ChibiHands = 1.3f;   // 1 = realistic proportions
+
         static CrewRig Prepare(GameObject model)
         {
             if (model == null) return null;
             model.transform.localPosition = Vector3.zero;
             model.transform.localRotation = Quaternion.identity;
             foreach (var t in model.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = 2;
+            // chibi look: big head (helmet rides on the Head bone), chunky hands. Clips only key rotation/translation, so bone scale sticks.
+            bool bornChibi = model.GetComponentsInChildren<Transform>(true).Any(t => t.name == "ChibiBody");
+            if (!bornChibi)   // the EVA suit mesh is modelled chibi already (rigged in Blender, tools/chibi_astronaut/rig.py); only the casual crew model is scaled
+            foreach (var t in model.GetComponentsInChildren<Transform>(true))
+                if (t.name == "Head") t.localScale = Vector3.one * ChibiHead;
+                else if (t.name == "LeftHand" || t.name == "RightHand") t.localScale = Vector3.one * ChibiHands;
             var rig = model.AddComponent<CrewRig>();
             rig.Init();
             rig.Play("Idle", 0f);
@@ -449,7 +459,7 @@ namespace Mohakash
         // ── Scripted moves + suit dock (coroutines run by Mission1 between BeginScript / EndScript) ──────
         int scripted;                       // >0: a sequence owns the character (input ignored, Busy = true)
         bool suitedIndoors;                 // inside the habitat but still in the EVA suit
-        Transform helmet, helmetHome; Vector3 helmetLocalPos; Quaternion helmetLocalRot;
+        Transform helmet, helmetHome; Vector3 helmetLocalPos, helmetLocalScale; Quaternion helmetLocalRot;
         // rear-entry hatch: the life-support pack swings open on a side hinge (EVA_Pack's origin) to climb in / out (xEMU / Z-2 style)
         Transform pack; Quaternion packHome; const float PackOpenDeg = 100f;
         Transform shellPack; Quaternion shellPackClosed;
@@ -474,7 +484,7 @@ namespace Mohakash
             {
                 foreach (var t in evaModel.GetComponentsInChildren<Transform>(true))
                 {
-                    if (t.name == "EVA_Helmet") { helmet = t; helmetHome = t.parent; helmetLocalPos = t.localPosition; helmetLocalRot = t.localRotation; }
+                    if (t.name == "EVA_Helmet") { helmet = t; helmetHome = t.parent; helmetLocalPos = t.localPosition; helmetLocalRot = t.localRotation; helmetLocalScale = t.localScale; }
                     if (t.name == "EVA_Pack") { pack = t; packHome = t.localRotation; }
                 }
                 evaBody = evaModel.GetComponentInChildren<SkinnedMeshRenderer>(true);
@@ -507,7 +517,7 @@ namespace Mohakash
         void ReattachHelmet()
         {
             if (helmet == null || helmetHome == null) return;
-            helmet.SetParent(helmetHome, false); helmet.localPosition = helmetLocalPos; helmet.localRotation = helmetLocalRot;
+            helmet.SetParent(helmetHome, false); helmet.localPosition = helmetLocalPos; helmet.localRotation = helmetLocalRot; helmet.localScale = helmetLocalScale;
         }
 
         void HandsFrame(CrewRig rig, out Vector3 mid, out Quaternion rot)
@@ -729,7 +739,7 @@ namespace Mohakash
             }
             foreach (var mr in evaModel.GetComponentsInChildren<MeshRenderer>())
             {
-                if (helmet && mr.transform.IsChildOf(helmet)) continue;
+                if (!mr.enabled || (helmet && mr.transform.IsChildOf(helmet))) continue;
                 var mf = mr.GetComponent<MeshFilter>(); if (mf == null) continue;
                 bool onPack = pack && mr.transform.IsChildOf(pack);
                 var c = new GameObject(mr.name + " (stored)"); c.transform.SetParent(onPack ? shellPack : root.transform, false);

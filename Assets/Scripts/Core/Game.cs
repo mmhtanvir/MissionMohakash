@@ -11,6 +11,18 @@ namespace Mohakash
         /// <summary>True once the intro has been shown in this launch, so returning to the menu never replays it.</summary>
         public static bool IntroShown;
 
+        /// <summary>Phones/tablets: drop the top mip of every texture (half resolution, a quarter of the memory).
+        /// The HD models carry ~1.1 GB of textures at full size, too much for a phone.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void MobileQuality()
+        {
+            if (Application.isMobilePlatform) QualitySettings.globalTextureMipmapLimit = 1;
+        }
+
+        /// <summary>Level being played (1-6). All levels run in the Mission1 scene; Sim/Level.cs says what differs.</summary>
+        public static int Level = 1;
+        public static void StartLevel(int n) { Level = n; Load(Mission1Scene); }
+
         public static float MouseSensitivity
         {
             get => PlayerPrefs.GetFloat("mouseSens", 1f);
@@ -50,8 +62,11 @@ namespace Mohakash
             SceneManager.LoadScene(scene);
         }
 
+        /// <summary>True while a panel/menu has the pointer (touch controls hide then).</summary>
+        public static bool CursorFree { get; private set; } = true;
         public static void SetCursorFree(bool free)
         {
+            CursorFree = free;
             Cursor.lockState = free ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = free;
         }

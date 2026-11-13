@@ -290,6 +290,46 @@ public static class ProjectSetup
             EditorApplication.Exit(1);
     }
 
+    // ------------------------------------------------------------------ Mobile (needs the iOS / Android modules in Unity Hub)
+
+    const string BundleId = "com.missionmohakash.game";   // ponytail: placeholder id, change before store upload
+
+    static void MobileSettings(UnityEditor.Build.NamedBuildTarget t)
+    {
+        PlayerSettings.SetApplicationIdentifier(t, BundleId);
+        PlayerSettings.SetScriptingBackend(t, ScriptingImplementation.IL2CPP);
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;   // landscape only, either way up
+        PlayerSettings.allowedAutorotateToLandscapeLeft = true; PlayerSettings.allowedAutorotateToLandscapeRight = true;
+        PlayerSettings.allowedAutorotateToPortrait = false; PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+    }
+
+    static void Build(string path, BuildTarget target, string label)
+    {
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+        var r = BuildPipeline.BuildPlayer(EditorBuildSettings.scenes.Select(s => s.path).ToArray(), path, target, BuildOptions.None);
+        Debug.Log($"[Build {label}] " + r.summary.result + " " + r.summary.totalSize / (1024 * 1024) + " MB, errors " + r.summary.totalErrors);
+        if (Application.isBatchMode && r.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
+    /// <summary>Writes an Xcode project to Builds/iOS: open it in Xcode, pick your team, run on the iPad/iPhone.</summary>
+    [MenuItem("Mission Mohakash/Build iOS (Xcode project)")]
+    public static void BuildIOS()
+    {
+        MobileSettings(UnityEditor.Build.NamedBuildTarget.iOS);
+        PlayerSettings.iOS.targetDevice = iOSTargetDevice.iPhoneAndiPad;
+        Build("Builds/iOS/MissionMohakash", BuildTarget.iOS, "iOS");
+    }
+
+    /// <summary>Builds Builds/Android/MissionMohakash.apk (ARM64), installable with adb or by copying it to the device.</summary>
+    [MenuItem("Mission Mohakash/Build Android APK")]
+    public static void BuildAndroid()
+    {
+        MobileSettings(UnityEditor.Build.NamedBuildTarget.Android);
+        PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+        EditorUserBuildSettings.buildAppBundle = false;
+        Build("Builds/Android/MissionMohakash.apk", BuildTarget.Android, "Android");
+    }
+
     [MenuItem("Mission Mohakash/Build Linux")]
     public static void BuildLinux()
     {

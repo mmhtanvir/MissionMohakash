@@ -22,6 +22,13 @@ namespace Mohakash
             go.SetActive(false);
             var doc = go.AddComponent<UIDocument>();
             doc.panelSettings = Resources.Load<PanelSettings>("UI/PanelSettings");
+            if (GameInput.Touch)
+            {
+                // phones/tablets: a copy (never edit the asset) with a smaller reference size, so text and buttons come out ~1.2x bigger
+                var ps = UnityEngine.Object.Instantiate(doc.panelSettings);
+                ps.referenceResolution = new Vector2Int(1600, 900);
+                doc.panelSettings = ps;
+            }
             go.SetActive(true);
             var root = doc.rootVisualElement;
             var sheet = Resources.Load<StyleSheet>("UI/Mohakash");
@@ -29,6 +36,21 @@ namespace Mohakash
             if (sheet && root.panel != null) root.panel.visualTree.styleSheets.Add(sheet);   // dropdown menus open outside root
             root.AddToClassList("root");
             root.pickingMode = PickingMode.Ignore;
+            if (GameInput.Touch)
+            {
+                // keep everything inside the safe area (notch, rounded corners, home bar). Re-checked while running: right after
+                // launch Android can report the screen and the safe area in different orientations, so each inset is capped at 10%.
+                root.style.position = Position.Absolute;
+                void Safe()
+                {
+                    float w = Screen.width, h = Screen.height; var s = Screen.safeArea;
+                    bool ok = w > 0 && h > 0 && s.width > 0 && s.height > 0 && s.xMax <= w + 1 && s.yMax <= h + 1;
+                    float P(float px, float of) => ok ? Mathf.Clamp(100f * px / of, 0f, 10f) : 0f;
+                    root.style.left = Length.Percent(P(s.xMin, w)); root.style.right = Length.Percent(P(w - s.xMax, w));
+                    root.style.bottom = Length.Percent(P(s.yMin, h)); root.style.top = Length.Percent(P(h - s.yMax, h));
+                }
+                Safe(); root.schedule.Execute(Safe).Every(500);
+            }
             return root;
         }
 
@@ -42,7 +64,9 @@ namespace Mohakash
         public static VisualElement Box(VisualElement parent, params string[] classes) => Add(parent, new VisualElement { pickingMode = PickingMode.Ignore }, classes);
         public static VisualElement Panel(VisualElement parent, params string[] classes)
         {
-            var v = Add(parent, new VisualElement(), classes); v.AddToClassList("panel"); return v;
+            var v = Add(parent, new VisualElement(), classes); v.AddToClassList("panel");
+            v.style.maxWidth = Length.Percent(98); v.style.maxHeight = Length.Percent(98);   // big fixed-size screens shrink to fit phones / 4:3 tablets
+            return v;
         }
         public static Label Text(VisualElement parent, string text, params string[] classes) => Add(parent, new Label(text) { pickingMode = PickingMode.Ignore }, classes);
 
@@ -82,6 +106,28 @@ namespace Mohakash
 
         public static void Show(VisualElement v, bool show) => v.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
         public static bool Visible(VisualElement v) => v.resolvedStyle.display != DisplayStyle.None && v.style.display != DisplayStyle.None;
+
+        public static void SetBorder(VisualElement el, float width, Color color, float radius = 0)
+        {
+            el.style.borderTopWidth = el.style.borderBottomWidth = el.style.borderLeftWidth = el.style.borderRightWidth = width;
+            el.style.borderTopColor = el.style.borderBottomColor = el.style.borderLeftColor = el.style.borderRightColor = color;
+            if (radius > 0) SetRadius(el, radius);
+        }
+
+        public static void SetBorderWidth(VisualElement el, float width)
+        {
+            el.style.borderTopWidth = el.style.borderBottomWidth = el.style.borderLeftWidth = el.style.borderRightWidth = width;
+        }
+
+        public static void SetBorderColor(VisualElement el, Color color)
+        {
+            el.style.borderTopColor = el.style.borderBottomColor = el.style.borderLeftColor = el.style.borderRightColor = color;
+        }
+
+        public static void SetRadius(VisualElement el, float radius)
+        {
+            el.style.borderTopLeftRadius = el.style.borderTopRightRadius = el.style.borderBottomLeftRadius = el.style.borderBottomRightRadius = radius;
+        }
 
         public static Severity Level(float value, float warnBelow, float critBelow) =>
             value < critBelow ? Severity.Critical : value < warnBelow ? Severity.Warning : Severity.Good;

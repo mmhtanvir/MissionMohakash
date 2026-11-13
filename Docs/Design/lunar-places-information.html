@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUNAR SURVIVAL INTELLIGENCE</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<style>
+:root{--bg:#05070f;--glass:rgba(18,24,48,.62);--line:rgba(0,229,255,.28);--cy:#00e5ff;--vi:#a78bfa}
+html{scroll-behavior:smooth}
+body{background:radial-gradient(ellipse at 20% 0,#14123a,var(--bg) 60%);color:#dbe4ff;min-height:100vh}
+#bg{position:fixed;inset:0;z-index:-1;width:100%;height:100%}
+.glass{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;box-shadow:0 0 18px rgba(0,229,255,.08)}
+.navbar{background:rgba(5,7,15,.85)!important;backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.brand{letter-spacing:.2em;font-weight:700;color:var(--cy)}
+h2{font-size:1.4rem;letter-spacing:.08em;color:var(--cy)} h2 i{color:var(--vi)}
+section{padding-top:4.5rem;margin-top:-2rem}
+.loc{cursor:pointer;transition:.2s;padding:.9rem;height:100%;text-align:left;color:inherit;width:100%}
+.loc:hover,.loc:focus-visible,.loc.active{border-color:var(--cy);box-shadow:0 0 22px rgba(0,229,255,.35);outline:0}
+.loc.active{background:rgba(0,229,255,.1)}
+.tag{font-size:.7rem;padding:.15rem .5rem;border-radius:20px;white-space:nowrap}
+.t-measured{background:#0f5132;color:#9fe8c0}.t-modeled{background:#1e3a8a;color:#bcd0ff}.t-interp{background:#5b3a00;color:#ffd699}
+.t-fiction{background:#4c1d95;color:#dcc8ff}.t-na{background:#3a3f55;color:#aab}
+.table{--bs-table-bg:transparent;--bs-table-color:#dbe4ff;--bs-table-border-color:rgba(255,255,255,.1)}
+.btn-cy{border:1px solid var(--cy);color:var(--cy);background:transparent}.btn-cy:hover{background:var(--cy);color:#000}
+.form-control,.form-select{background:rgba(0,0,0,.4);border-color:var(--line);color:#fff}.form-control:focus{background:rgba(0,0,0,.5);color:#fff;border-color:var(--cy);box-shadow:0 0 0 .2rem rgba(0,229,255,.2)}
+a{color:var(--cy)} .small-muted{color:#93a0c8;font-size:.82rem}
+pre{background:#02040a;border:1px solid var(--line);border-radius:8px;padding:.7rem;color:#9ef;font-size:.78rem;max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.api{cursor:pointer;padding:.8rem;height:100%;text-align:left;color:inherit;width:100%}.api:hover,.api.active{border-color:var(--vi);box-shadow:0 0 18px rgba(167,139,250,.35);outline:0}
+.bar{height:26px;border-radius:6px;border:1px solid var(--line);position:relative;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 6px #fff}
+details{border-top:1px solid rgba(255,255,255,.1);padding:.4rem 0}summary{cursor:pointer;color:var(--vi)}
+.warn{border-left:3px solid #ffb020;padding:.5rem .8rem;background:rgba(255,176,32,.08);font-size:.85rem;border-radius:6px}
+canvas.ch{max-height:280px}
+footer{padding:2rem 0;color:#6b7699;font-size:.8rem}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+ <div class="container">
+  <a class="navbar-brand brand" href="#top"><i class="bi bi-moon-stars-fill"></i> LUNAR SURVIVAL INTELLIGENCE</a>
+  <button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#nv" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+  <div class="collapse navbar-collapse" id="nv"><ul class="navbar-nav ms-auto">
+   <li class="nav-item"><a class="nav-link" href="#explorer">Locations</a></li>
+   <li class="nav-item"><a class="nav-link" href="#env">Environment</a></li>
+   <li class="nav-item"><a class="nav-link" href="#sun">Sunlight</a></li>
+   <li class="nav-item"><a class="nav-link" href="#apis">APIs</a></li>
+   <li class="nav-item"><a class="nav-link" href="#game">Game Tools</a></li>
+   <li class="nav-item"><a class="nav-link" href="#guide">Quick-start</a></li>
+  </ul></div>
+ </div>
+</nav>
+
+<main class="container pb-5" id="top">
+ <header class="text-center py-5 mt-4">
+  <h1 class="display-5 fw-bold" style="letter-spacing:.15em;text-shadow:0 0 22px rgba(0,229,255,.55)">LUNAR SURVIVAL INTELLIGENCE</h1>
+  <p class="lead">Mission-control research dashboard for a NASA Space Apps Challenge Moon survival game</p>
+  <div class="d-flex flex-wrap gap-2 justify-content-center small">
+   <span class="tag t-measured">Measured</span><span class="tag t-modeled">Modeled / derived</span><span class="tag t-interp">Interpretation</span><span class="tag t-fiction">Fictional game value</span><span class="tag t-na">Data unavailable</span>
+  </div>
+  <div class="warn text-start mt-4 mx-auto" style="max-width:820px"><b>Data policy:</b> this page bundles no site-specific measurements. Where a value would require instrument data (Diviner, LOLA, CRaTER…) it reads “Data unavailable” and points to the archive. Numbers marked <i>Modeled</i> are computed here from simple flat-terrain geometry and are approximations.</div>
+ </header>
+
+ <section id="explorer">
+  <h2><i class="bi bi-geo-alt-fill"></i> LUNAR LOCATION EXPLORER</h2>
+  <input id="locSearch" class="form-control mb-3" placeholder="Search locations (e.g. crater, Apollo, volcanic)…" aria-label="Search locations">
+  <div class="row g-3 mb-4" id="locCards"></div>
+  <div class="glass p-3 p-md-4" id="dash" aria-live="polite"></div>
+ </section>
+
+ <section id="env">
+  <h2><i class="bi bi-thermometer-sun"></i> ENVIRONMENTAL DATA — <span id="envName"></span></h2>
+  <div class="glass p-3"><div class="table-responsive"><table class="table table-sm align-middle mb-0">
+   <thead><tr><th>Variable</th><th>Value</th><th>Unit</th><th>Type</th><th>Method / confidence / source</th></tr></thead><tbody id="envBody"></tbody></table></div>
+   <p class="small-muted mt-2 mb-0">Timestamps: values are static as of page build (2026-10-23); no live measurement is displayed except in the Horizons fetch below. Solar constant ≈1361 W/m² at 1 AU (see <a href="https://science.nasa.gov/sun/facts/" target="_blank" rel="noopener">NASA Sun facts</a>); lunar axial tilt ≈1.54° to the ecliptic.</p></div>
+  <div class="row g-3 mt-1">
+   <div class="col-lg-6"><div class="glass p-3"><h3 class="h6">Max noon solar elevation by site <span class="tag t-modeled">Modeled · flat terrain</span></h3><canvas id="c1" class="ch"></canvas></div></div>
+   <div class="col-lg-6"><div class="glass p-3"><h3 class="h6">Solar elevation &amp; irradiance upper bound over one lunar day <span class="tag t-modeled">Modeled</span></h3><canvas id="c2" class="ch"></canvas></div></div>
+   <div class="col-12"><div class="glass p-3"><h3 class="h6"><i class="bi bi-thermometer-half"></i> Temperature &amp; radiation charts <span class="tag t-na">Data unavailable</span></h3><p class="mb-0 small-muted">No site-specific Diviner temperatures or CRaTER dose rates are bundled, so no chart is drawn rather than inventing numbers. Use the <a href="#apis">API Explorer</a> (Diviner/ODE, PDS) to retrieve real series, then plot them with Chart.js.</p></div></div>
+  </div>
+ </section>
+
+ <section id="sun">
+  <h2><i class="bi bi-brightness-high-fill"></i> SUNLIGHT SIMULATOR</h2>
+  <div class="glass p-3 p-md-4">
+   <div class="row g-3">
+    <div class="col-md-4"><label class="form-label" for="sunLoc">Location</label><select id="sunLoc" class="form-select"></select>
+     <label class="form-label mt-3" for="dec">Sub-solar latitude (season)</label>
+     <select id="dec" class="form-select"><option value="-1.54">−1.54° (extreme south)</option><option value="0" selected>0° (equinox)</option><option value="1.54">+1.54° (extreme north)</option></select>
+     <label class="form-label mt-3" for="day">Time in lunar day: <b id="dayV"></b></label>
+     <input type="range" class="form-range" id="day" min="0" max="29.53" step="0.1" value="0"></div>
+    <div class="col-md-8">
+     <div class="row text-center g-2 mb-3">
+      <div class="col-4"><div class="glass p-2"><div class="small-muted">Solar elevation</div><div class="fs-4" id="sElev"></div></div></div>
+      <div class="col-4"><div class="glass p-2"><div class="small-muted">Status</div><div class="fs-5" id="sStat"></div></div></div>
+      <div class="col-4"><div class="glass p-2"><div class="small-muted">Irradiance ≤</div><div class="fs-5" id="sIrr"></div></div></div>
+     </div>
+     <div class="small-muted">Daylight (yellow) vs darkness across one synodic day (~29.53 Earth days); marker = selected time</div>
+     <div class="bar mb-2" id="tl"><i id="mk"></i></div>
+     <div id="sSum" class="small"></div>
+    </div>
+   </div>
+   <div class="warn mt-3">Approximation: sin(elevation) = sinφ·sinδ + cosφ·cosδ·cos h on a smooth sphere with no terrain. Real illumination depends on latitude, local terrain and time; polar regions can have extended illumination on elevated rims and permanent shadow in craters, which this model cannot capture (use LOLA-based illumination maps via <a href="https://trek.nasa.gov/moon/" target="_blank" rel="noopener">Moon Trek</a>). The slider's time axis starts at local noon.</div>
+   <div class="mt-3"><button class="btn btn-cy btn-sm" id="hz"><i class="bi bi-arrow-repeat"></i> Fetch live Horizons Sun elevation for this site (now, UTC)</button>
+    <pre id="hzOut" class="mt-2 d-none"></pre></div>
+  </div>
+ </section>
+
+ <section id="apis">
+  <h2><i class="bi bi-diagram-3-fill"></i> NASA &amp; EXTERNAL API EXPLORER</h2>
+  <div class="row g-2 mb-3"><div class="col-md-8"><input id="apiSearch" class="form-control" placeholder="Search APIs, datasets, Diviner, LOLA, Horizons…" aria-label="Search APIs"></div>
+   <div class="col-md-4"><select id="apiCat" class="form-select" aria-label="Filter"><option value="">All sources</option><option value="core">Core to lunar survival</option><option value="optional">Optional / loosely related</option></select></div></div>
+  <div class="row g-3 mb-3" id="apiCards"></div>
+  <div class="glass p-3 p-md-4" id="apiDetail"><p class="mb-0 small-muted">Select a source above to see its purpose, access method, example request, limits and steps.</p></div>
+ </section>
+
+ <section id="game">
+  <h2><i class="bi bi-controller"></i> SURVIVAL GAME TOOLS — <span id="gName"></span></h2>
+  <div class="glass p-3 p-md-4">
+   <label class="form-label" for="diff">Difficulty: <b id="diffV"></b></label>
+   <input type="range" class="form-range" id="diff" min="1" max="5" value="3">
+   <p class="small-muted">Difficulty only scales fictional resource-drain multipliers below. Scientific data above is never altered.</p>
+   <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Gameplay parameter</th><th>Base</th><th>At difficulty</th><th>Basis</th></tr></thead><tbody id="gBody"></tbody></table></div>
+   <div class="warn">Only “Power” derives from a calculation (flat-terrain geometry, underestimates illuminated polar peaks). All other base scores (1–10) are <b>fictional balancing values</b> chosen by the game designer — not measurements. Replace them with real derived values once you retrieve data from the APIs.</div>
+  </div>
+ </section>
+
+ <section id="guide">
+  <h2><i class="bi bi-rocket-takeoff-fill"></i> API QUICK-START &amp; DATA SOURCES</h2>
+  <div class="glass p-3 p-md-4">
+   <ol>
+    <li><b>No key needed:</b> NASA Image and Video Library, Earthdata CMR search, JPL Horizons. Try them with the test buttons (browser CORS policy may block some; the error is shown honestly).</li>
+    <li><b>Key needed:</b> <code>api.nasa.gov</code> services — sign up free at <a href="https://api.nasa.gov/" target="_blank" rel="noopener">api.nasa.gov</a>; <code>DEMO_KEY</code> is heavily rate-limited. Never commit private keys to a public repo or front-end; proxy them server-side.</li>
+    <li><b>Real temperature / elevation / radiation:</b> these are <u>archives</u>, not simple APIs — LRO Diviner (temperature), LOLA (elevation, slope), LROC (imagery), CRaTER (radiation) are in the PDS. Search with ODE, download products, then process (e.g. in Python) and bundle summary JSON.</li>
+    <li><b>Illumination:</b> Horizons gives geometric Sun elevation for a surface coordinate; terrain-aware illumination needs LOLA-derived maps (Moon Trek).</li>
+   </ol>
+   <details><summary>Why the bundled location data is mostly qualitative</summary><p class="small mb-0">Site-specific measurements require extracting products from instrument archives; guessing them would break scientific accuracy. The page therefore bundles only well-established qualitative facts plus clearly-labelled geometric models.</p></details>
+  </div>
+ </section>
+</main>
+<footer class="text-center">Built for a NASA Space Apps Challenge project · Not an official NASA product · Verify all data at the linked sources.</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const SYN=29.53059, DEC0=1.54, S0=1361, rad=Math.PI/180;
+const NASA_LRO='https://science.nasa.gov/mission/lro/', PDSG='https://pds-geosciences.wustl.edu/missions/lro/', TREK='https://trek.nasa.gov/moon/', MOON='https://science.nasa.gov/moon/';
+const LOCS=[
+{id:'shackleton',name:'Shackleton Crater',lat:-89.9,lon:0,coords:'≈89.9°S, 0°E (south pole rim)',icon:'snow',
+ terrain:'Roughly 20 km-wide, several km-deep simple crater at the south pole; interior largely in permanent shadow, rim has steep walls.',
+ history:'No landing. Studied from orbit by LRO (LOLA, Diviner, LROC), Kaguya and others.',
+ importance:'One of the best-studied permanently shadowed regions; candidate for cold-trapped volatiles and for sunlit rim sites near them.',
+ resources:'Possible water ice and other volatiles in shadowed areas (unconfirmed in situ); highly illuminated rim points for solar power (terrain-dependent).',
+ hazards:'Extreme cold in shadow, very low sun angles and long shadows, steep slopes, boulders, communication blackouts.',
+ challenges:'Thermal survival in shadow, power continuity, navigation in darkness, Earth-link line of sight.',
+ objectives:'Establish a rim base, build a power-relay path, make an ice-prospecting run into shadow and return before power drops.',
+ ice:'Interpretation: orbital reflectance/temperature data suggest possible surface ice; not confirmed in situ.',comm:'Variable',sun:'Variable',
+ src:[['NASA LRO mission',NASA_LRO],['Moon Trek (illumination, LOLA maps)',TREK],['PDS LRO archive',PDSG]],game:{ice:9,mob:3,rad:5,comm:3,hab:5}},
+{id:'nobile',name:'Nobile Crater Region',lat:-85.2,lon:53.5,coords:'≈85.2°S, 53.5°E',icon:'snow2',
+ terrain:'Large (~70 km) crater near the south pole with rim terrain and nearby shadowed areas; regolith details not compiled here.',
+ history:'No landing. Region listed among NASA’s Artemis III candidate landing regions (announced 2022).',
+ importance:'Artemis candidate region combining potential sunlit rim terrain with proximity to shadowed volatile-bearing areas.',
+ resources:'Potential volatiles in nearby permanently shadowed regions (unconfirmed); possible illuminated ridges.',
+ hazards:'Low sun angle, long shadows, slopes, cold traps, partial Earth visibility.',
+ challenges:'Same polar trade-offs as Shackleton with less certain comms; route planning between light and shadow.',
+ objectives:'Pick a landing rim, plan a rover traverse, balance sunlit time against ice-sampling time.',
+ ice:'Interpretation: nearby shadowed terrain may hold ice; no site quantity compiled here.',comm:'Variable',sun:'Variable',
+ src:[['NASA Artemis III candidate regions','https://www.nasa.gov/press-release/nasa-identifies-candidate-regions-for-landing-next-americans-on-moon/'],['NASA LRO mission',NASA_LRO],['Moon Trek',TREK]],game:{ice:7,mob:4,rad:5,comm:4,hab:5}},
+{id:'aristarchus',name:'Aristarchus Plateau',lat:23.7,lon:-47.4,coords:'≈23.7°N, 47.4°W (near side)',icon:'fire',
+ terrain:'Elevated volcanic plateau beside the young, bright Aristarchus crater; sinuous rilles and pyroclastic (volcanic ash) deposits.',
+ history:'No landing; heavily imaged and studied from orbit.',
+ importance:'Diverse geology: impact crater, volcanic rilles and dark mantling deposits sampled from orbit.',
+ resources:'Pyroclastic deposits may hold useful glass/volatile-bearing material (interpretation); abundant sunlight in lunar day.',
+ hazards:'Rough ejecta, rilles, thermal swing across the lunar day/night cycle.',
+ challenges:'~14-day nights without ice-rich shadow access; thermal and power storage dominate.',
+ objectives:'Survive a full night using stored power; sample a pyroclastic deposit.',
+ ice:'None compiled for this site.',comm:'Yes (near side, Earth generally visible; modeled geometry)',sun:'Yes',
+ src:[['NASA Moon',MOON],['NASA LRO mission',NASA_LRO],['USGS Astrogeology','https://astrogeology.usgs.gov/']],game:{ice:2,mob:5,rad:4,comm:9,hab:5}},
+{id:'taurus',name:'Taurus–Littrow Valley',lat:20.19,lon:30.77,coords:'≈20.19°N, 30.77°E (Apollo 17 site, near side)',icon:'flag',
+ terrain:'Valley between massifs at the edge of Mare Serenitatis; mare basalt floor with highland material.',
+ history:'Apollo 17, December 1972: last crewed lunar landing; three moonwalks with the Lunar Roving Vehicle; orange volcanic soil found.',
+ importance:'Best-documented crewed surface operations; ground-truth for survival and rover logistics.',
+ resources:'Basalt regolith (oxygen/metals potential); sunlight in lunar day.',
+ hazards:'Dust, thermal extremes, radiation exposure over time.',
+ challenges:'Dust abrasion, night survival, rover range limits.',
+ objectives:'Replay an Apollo-style traverse: rover range vs consumables, sample targets.',
+ ice:'None compiled for this site.',comm:'Yes (near side; Apollo 17 used direct Earth link)',sun:'Yes',
+ src:[['NASA Apollo 17','https://www.nasa.gov/mission_pages/apollo/missions/apollo17.html'],['NASA Technical Reports','https://ntrs.nasa.gov/'],['NASA Moon',MOON]],game:{ice:2,mob:7,rad:4,comm:9,hab:6}},
+{id:'marius',name:'Marius Hills',lat:14.0,lon:-56.0,coords:'≈14°N, 56°W (near side)',icon:'bounding-box',
+ terrain:'Volcanic complex of domes, cones and rilles on Oceanus Procellarum; a collapse pit (skylight) suggests a lava tube.',
+ history:'No landing. Pit identified from Kaguya imagery and later studied with LRO.',
+ importance:'Possible lava-tube access — natural shelter concept against radiation and temperature swings.',
+ resources:'Basaltic regolith; possible sheltered volume (interpretation, unverified).',
+ hazards:'Pit edges, rough volcanic terrain, unknown tube stability.',
+ challenges:'Reaching and safely entering a pit; mapping the cavity.',
+ objectives:'Scout the skylight and decide whether to build a shelter near or inside the lava tube.',
+ ice:'None compiled for this site.',comm:'Yes (near side; inside a pit: no)',sun:'Yes',
+ src:[['NASA Moon',MOON],['NASA LRO mission',NASA_LRO],['USGS Astrogeology','https://astrogeology.usgs.gov/']],game:{ice:2,mob:5,rad:8,comm:7,hab:8}},
+{id:'tycho',name:'Tycho Crater',lat:-43.3,lon:-11.2,coords:'≈43.3°S, 11.2°W (near side)',icon:'sun',
+ terrain:'Young, ~85 km impact crater with central peak and prominent bright ray system; rough, blocky ejecta.',
+ history:'Surveyor 7 landed on ejecta north of Tycho in January 1968; no crewed landing.',
+ importance:'Young crater: pristine impact melt and exposure of deep material.',
+ resources:'Impact-melt and highland material; sunlight in lunar day.',
+ hazards:'Blocky ejecta, steep walls, thermal extremes.',
+ challenges:'Rover mobility over boulders, long night.',
+ objectives:'Cross ejecta to the central peak and return before nightfall.',
+ ice:'None compiled for this site.',comm:'Yes (near side, Earth generally visible)',sun:'Yes',
+ src:[['NASA Surveyor program','https://science.nasa.gov/mission/surveyor-7/'],['NASA Moon',MOON],['USGS Astrogeology','https://astrogeology.usgs.gov/']],game:{ice:2,mob:3,rad:4,comm:8,hab:4}}
+];
+const q=s=>document.querySelector(s), esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let cur=LOCS[0], c1, c2;
+// ---- geometry (modeled)
+const elevDeg=(lat,dec,h)=>Math.asin(Math.sin(lat*rad)*Math.sin(dec*rad)+Math.cos(lat*rad)*Math.cos(dec*rad)*Math.cos(h))/rad;
+const dayFrac=(lat,dec)=>{const x=-Math.tan(lat*rad)*Math.tan(dec*rad);return x>=1?0:x<=-1?1:Math.acos(x)/Math.PI};
+const maxElev=l=>90-Math.abs(l.lat)+DEC0;
+const minMax=l=>[90-Math.abs(l.lat)-DEC0,90-Math.abs(l.lat)+DEC0];
+const tg=t=>`<span class="tag t-${t}">${{measured:'Measured',modeled:'Modeled',interp:'Interpretation',fiction:'Fictional',na:'Unavailable'}[t]}</span>`;
+const links=a=>a.map(x=>`<a href="${x[1]}" target="_blank" rel="noopener">${esc(x[0])}</a>`).join(' · ');
+// ---- explorer
+function renderCards(f=''){
+ q('#locCards').innerHTML=LOCS.filter(l=>(l.name+l.terrain+l.history+l.coords).toLowerCase().includes(f.toLowerCase())).map(l=>
+ `<div class="col-6 col-lg-4"><button class="glass loc ${l.id===cur.id?'active':''}" data-id="${l.id}" aria-pressed="${l.id===cur.id}"><i class="bi bi-${l.icon} text-info"></i> <b>${l.name}</b><div class="small-muted">${l.coords}</div></button></div>`).join('')||'<p class="small-muted">No matching location.</p>';
+}
+function renderDash(){
+ const l=cur,rows=[['Terrain',l.terrain],['Mission history',l.history],['Scientific importance',l.importance],['Potential resources',l.resources],['Hazards',l.hazards],['Survival challenges',l.challenges]];
+ q('#dash').innerHTML=`<h3 class="h4">${l.name}</h3><p class="mb-2"><i class="bi bi-pin-map text-info"></i> ${l.coords} <span class="small-muted">(approximate, rounded)</span></p>`+
+ rows.map(r=>`<p class="mb-2"><b class="text-info">${r[0]}:</b> ${esc(r[1])}</p>`).join('')+
+ `<p class="mb-2"><b class="text-info">Suggested gameplay objectives:</b> ${tg('fiction')} ${esc(l.objectives)}</p>
+ <details><summary>Sources (open to expand)</summary><p class="small mb-1 mt-2">${links(l.src)}</p><p class="small-muted mb-0">Links go to the originating agency pages; verify details there.</p></details>`;
+}
+function renderEnv(){
+ const l=cur,[mn,mx]=minMax(l),f0=dayFrac(l.lat,0),polar=Math.abs(l.lat)>85;
+ const U='Data unavailable', diviner=`Query LRO Diviner via <a href="${PDSG}" target="_blank" rel="noopener">PDS</a>`;
+ const R=[
+ ['Surface temperature',U,'°C','na',`${diviner}. Global context (Diviner, Williams et al. 2017): equatorial noon ≈ +110 to +120 °C, equatorial night ≈ −180 °C (approx., not site-specific).`],
+ ['Maximum / minimum temperature',U,'°C','na',`${diviner}; polar shadow floors are far colder than equatorial values.`],
+ ['Radiation dose rate',U,'mSv/h','na',`LRO CRaTER measures lunar radiation; see <a href="${NASA_LRO}" target="_blank" rel="noopener">LRO</a> / PDS. Not bundled.`],
+ ['Cumulative radiation dose',U,'mSv','na','Depends on mission duration and shielding; compute from a measured dose rate once retrieved.'],
+ ['Direct sunlight',l.sun,'Yes/No/Variable','modeled','Geometric reasoning; polar sites depend on terrain.'],
+ ['Daylight / darkness',polar?'Variable (terrain-dominated)':`≈${(f0*SYN*24).toFixed(0)} h / ≈${((1-f0)*SYN*24).toFixed(0)} h per cycle`,'hours','modeled',polar?'Flat-terrain model not valid this close to the pole; use illumination maps (Moon Trek).':'Flat-terrain geometry, ~29.53-day synodic cycle; ignores horizon terrain.'],
+ ['Solar elevation (noon range)',`${mn.toFixed(1)} to ${mx.toFixed(1)}`,'degrees','modeled','90° − |latitude| ± 1.54° axial tilt, smooth sphere. Confidence: moderate for flat ground.'],
+ ['Solar irradiance (noon, upper bound)',`≤ ${(S0*Math.sin(mx*rad)).toFixed(0)}`,'W/m²','modeled','1361 W/m² × sin(elevation); ignores Earth–Sun distance (±~3%), terrain shadows and dust.'],
+ ['Elevation and slope',U,'m, degrees','na',`LOLA topography (<a href="${PDSG}" target="_blank" rel="noopener">PDS</a>, <a href="${TREK}" target="_blank" rel="noopener">Moon Trek</a>).`],
+ ['Water-ice evidence',l.ice,'qualitative','interp','No quantitative abundance bundled; see LRO/LCROSS literature.'],
+ ['Terrain and regolith',l.terrain,'description','interp','Summary description; see sources in the location dashboard.'],
+ ['Communication visibility',l.comm,'Yes/No/Variable','modeled','Near-side sites generally have Earth above the horizon (libration, terrain matter).']];
+ q('#envName').textContent=l.name.toUpperCase();
+ q('#envBody').innerHTML=R.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="small-muted">${r[2]}</td><td>${tg(r[3])}</td><td class="small">${r[4]}</td></tr>`).join('');
+ const cols=LOCS.map(x=>x.id===l.id?'#00e5ff':'#a78bfa');
+ if(window.Chart){
+  const d1={labels:LOCS.map(x=>x.name.split(' ')[0]),datasets:[{label:'Max noon elevation (°)',data:LOCS.map(x=>+maxElev(x).toFixed(1)),backgroundColor:cols}]};
+  if(c1){c1.data=d1;c1.update()}else c1=new Chart(q('#c1'),{type:'bar',data:d1,options:{plugins:{legend:{labels:{color:'#cbd5ff'}}},scales:{x:{ticks:{color:'#cbd5ff'}},y:{ticks:{color:'#cbd5ff'},title:{display:true,text:'degrees',color:'#cbd5ff'}}}}});
+  const labs=[],el=[],ir=[];for(let d=0;d<=SYN;d+=SYN/60){const e=elev(l,d);labs.push(d.toFixed(1));el.push(+e.toFixed(2));ir.push(e>0?+(S0*Math.sin(e*rad)).toFixed(0):0)}
+  const d2={labels:labs,datasets:[{label:'Elevation (°)',data:el,borderColor:'#00e5ff',pointRadius:0,yAxisID:'y'},{label:'Irradiance upper bound (W/m²)',data:ir,borderColor:'#fbbf24',pointRadius:0,yAxisID:'y1'}]};
+  if(c2){c2.data=d2;c2.update()}else c2=new Chart(q('#c2'),{type:'line',data:d2,options:{plugins:{legend:{labels:{color:'#cbd5ff'}}},scales:{x:{ticks:{color:'#cbd5ff',maxTicksLimit:8},title:{display:true,text:'days since local noon (δ=0)',color:'#cbd5ff'}},y:{ticks:{color:'#cbd5ff'}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#fbbf24'}}}}});
+ }
+}
+function elev(l,d,dec=0){return elevDeg(l.lat,dec,2*Math.PI*d/SYN)}
+// ---- simulator
+function renderSun(){
+ const l=LOCS.find(x=>x.id===q('#sunLoc').value),dec=+q('#dec').value,d=+q('#day').value,e=elev(l,d,dec),f=dayFrac(l.lat,dec);
+ q('#dayV').textContent=d.toFixed(1)+' d';
+ q('#sElev').textContent=e.toFixed(1)+'°';
+ q('#sStat').textContent=e>0?'☀ Sun up':'☾ Dark';
+ q('#sIrr').textContent=e>0?(S0*Math.sin(e*rad)).toFixed(0)+' W/m²':'0 W/m²';
+ q('#sSum').innerHTML=`Modeled daylight fraction ≈ ${(f*100).toFixed(0)}% (≈${(f*SYN*24).toFixed(0)} h per cycle) for ${esc(l.name)} at sub-solar latitude ${dec}°. ${Math.abs(l.lat)>85?'<b>Polar site:</b> actual rim illumination can be far greater and crater floors permanently dark — flat model is only illustrative.':''}`;
+ let g=[];for(let i=0;i<=60;i++){g.push(elev(l,i*SYN/60,dec)>0?'#fbbf24':'#111633')}
+ q('#tl').style.background=`linear-gradient(90deg,${g.map((c,i)=>`${c} ${(i/60*100).toFixed(1)}%`).join(',')})`;
+ q('#mk').style.left=(d/SYN*100)+'%';
+}
+q('#hz').onclick=async()=>{
+ const l=LOCS.find(x=>x.id===q('#sunLoc').value),o=q('#hzOut');o.classList.remove('d-none');o.textContent='Loading…';
+ const t=new Date(),p=n=>String(n).padStart(2,'0'),f=d=>`${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`,t2=new Date(t.getTime()+60000);
+ const u=horizonsUrl(l,f(t),f(t2));
+ try{const r=await fetch(u);const j=await r.json();const s=j.result||'';const m=s.split('$$SOE')[1];o.textContent=m?'Horizons (UTC '+f(t)+') — columns: date, solar/lunar flags, azimuth, elevation (deg):\n'+m.split('$$EOE')[0].trim():'No ephemeris rows returned:\n'+s.slice(0,600)}
+ catch(e){o.textContent='Request failed: '+e.message+' (likely CORS or network). Use a server-side proxy.'}
+};
+function horizonsUrl(l,a,b){const P={format:'json',COMMAND:"'10'",CENTER:"'coord@301'",COORD_TYPE:"'GEODETIC'",SITE_COORD:`'${((l.lon+360)%360)},${l.lat},0'`,START_TIME:`'${a}'`,STOP_TIME:`'${b}'`,STEP_SIZE:"'1m'",QUANTITIES:"'4'"};
+ return 'https://ssd.jpl.nasa.gov/api/horizons.api?'+Object.entries(P).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&')}
+// ---- API data
+const APIS=[
+{id:'images',name:'NASA Image & Video Library API',cat:'core',kind:'Searchable archive + API',purpose:'Search NASA imagery (Apollo, LRO) for site visuals.',
+ doc:'https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf',ep:'https://images-api.nasa.gov/search?q=apollo%2017%20taurus-littrow&media_type=image',auth:'None',
+ resp:'{ "collection": { "items": [ { "data": [ { "title": "...", "nasa_id": "...", "date_created": "..." } ], "links": [ { "href": "..." } ] } ] } }  (structure only)',
+ lim:'Metadata and thumbnails only; check media usage guidance.',steps:['Build a search URL with q= and media_type=image.','Fetch it and read collection.items.','Use links[0].href for thumbnails and cite nasa_id.'],test:'https://images-api.nasa.gov/search?q=apollo%2017%20taurus-littrow&media_type=image&page_size=1'},
+{id:'horizons',name:'JPL Horizons API',cat:'core',kind:'Direct API',purpose:'Geometric Sun/Earth positions as seen from a lunar surface coordinate (sun elevation timelines).',
+ doc:'https://ssd-api.jpl.nasa.gov/doc/horizons.html',ep:()=>horizonsUrl(cur,'2026-10-23 00:00','2026-10-23 06:00'),auth:'None',
+ resp:'{ "signature": { "version": "...", "source": "NASA/JPL Horizons API" }, "result": "…text table between $$SOE and $$EOE…" }  (structure only)',
+ lim:'Geometric only: no terrain shadowing. Parameter syntax is strict; read the doc. May be blocked by CORS in browsers.',steps:['Use COMMAND=10 (Sun), CENTER=coord@301 (Moon surface).','Set SITE_COORD=east-lon,lat,alt-km and START/STOP/STEP.','QUANTITIES=4 returns azimuth/elevation; parse rows between $$SOE and $$EOE.'],test:()=>horizonsUrl(cur,'2026-10-23 00:00','2026-10-23 00:02')},
+{id:'ode',name:'PDS Lunar Orbital Data Explorer (ODE) REST',cat:'core',kind:'Searchable archive + REST',purpose:'Find LRO LOLA / Diviner / LROC data products by location and instrument.',
+ doc:'https://oderest.rsl.wustl.edu/',ep:'https://oderest.rsl.wustl.edu/live2/?target=moon&query=product&results=v&output=JSON&ihid=LRO&iid=LOLA&limit=1',auth:'None',
+ resp:'{ "ODEResults": { "Status": "Success", "Products": { "Product": [ … ] } } }  (as documented; verify against ODE docs)',
+ lim:'Returns product metadata/links, not ready-made site statistics. Verify parameters in the docs; CORS may block browser calls.',steps:['Open the doc page and choose instrument host (ihid=LRO) and iid (LOLA, DIV, LROC).','Add latitude/longitude bounds from the docs.','Download linked products and process them offline.'],test:'https://oderest.rsl.wustl.edu/live2/?target=moon&query=product&results=v&output=JSON&ihid=LRO&iid=LOLA&limit=1'},
+{id:'pds',name:'NASA PDS Registry API',cat:'core',kind:'Direct API + archive',purpose:'Programmatic search of PDS4 data products across nodes.',
+ doc:'https://nasa-pds.github.io/pds-api/',ep:'https://pds.nasa.gov/api/search/1/products?limit=1',auth:'None',
+ resp:'JSON:API-style listing with "data" array of products  (structure only; verify in docs)',
+ lim:'Coverage depends on archive migration; older lunar products may live only in node archives.',steps:['Read the PDS API docs for query syntax.','Query products by mission/instrument.','Follow product URLs to download data.'],test:'https://pds.nasa.gov/api/search/1/products?limit=1'},
+{id:'lro',name:'LRO: Diviner · LOLA · LROC · CRaTER',cat:'core',kind:'Downloadable datasets + documentation',purpose:'Temperature (Diviner), elevation/slope/reflectance (LOLA), imagery (LROC), radiation (CRaTER). Primary source for any real site values.',
+ doc:NASA_LRO,ep:PDSG,auth:'None (public archive)',resp:'Not an API: files (IMG/TIF/CSV with labels).',lim:'Large rasters; heavy processing; no per-site summary endpoint.',steps:['Open the PDS Geosciences LRO archive.','Pick instrument (Diviner RDR/GDR, LOLA GDR…).','Download, extract site values, and store as your own JSON with citation.'],test:null},
+{id:'trek',name:'NASA Moon Trek',cat:'core',kind:'Web portal + map services',purpose:'Interactive LOLA terrain, illumination and slope layers for visual site study.',
+ doc:TREK,ep:TREK,auth:'None',resp:'Interactive viewer; see portal help for tile-service details.',lim:'Verify service endpoints in portal documentation before coding against them.',steps:['Open Moon Trek and zoom to a site.','Enable elevation, slope or illumination layers.','Record observations and cite the layer.'],test:null},
+{id:'cmr',name:'NASA Earthdata CMR Search',cat:'optional',kind:'Direct API',purpose:'Search NASA Earthdata collections; mostly Earth science, so only marginal for lunar work.',
+ doc:'https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html',ep:'https://cmr.earthdata.nasa.gov/search/collections.json?keyword=moon&page_size=2',auth:'None for search',
+ resp:'{ "feed": { "entry": [ { "title": "...", "id": "..." } ] } }  (structure only)',lim:'Few lunar datasets; mainly Earth observation.',steps:['Query collections.json with keyword and page_size.','Read feed.entry.','Follow links for access.'],test:'https://cmr.earthdata.nasa.gov/search/collections.json?keyword=moon&page_size=1'},
+{id:'ntrs',name:'NASA Technical Reports Server',cat:'core',kind:'Searchable archive (+ API)',purpose:'Find peer-reviewed-style NASA reports (Apollo, regolith, radiation) to cite.',
+ doc:'https://ntrs.nasa.gov/',ep:'https://ntrs.nasa.gov/api/citations/search?q=lunar%20regolith&page.size=2',auth:'None',resp:'{ "stats": {…}, "results": [ { "title": "...", "id": … } ] }  (structure only; verify)',lim:'Check the site for API docs; CORS unknown.',steps:['Search on the website first to refine keywords.','Call the search endpoint with q.','Cite the report ID and link.'],test:'https://ntrs.nasa.gov/api/citations/search?q=lunar%20regolith&page.size=1'},
+{id:'usgs',name:'USGS Astrogeology',cat:'core',kind:'Maps, datasets, docs (+ STAC)',purpose:'Lunar geologic maps and planetary map products.',
+ doc:'https://astrogeology.usgs.gov/',ep:'https://stac.astrogeology.usgs.gov/api/collections',auth:'None',resp:'STAC JSON: { "collections": [ … ] }  (verify on site)',lim:'Verify STAC availability and collection names on the USGS site.',steps:['Browse Astrogeology for lunar maps.','Optionally query the STAC collections endpoint.','Download map products and cite them.'],test:'https://stac.astrogeology.usgs.gov/api/collections'},
+{id:'nasaapi',name:'NASA Open APIs (api.nasa.gov) — APOD example',cat:'optional',kind:'Direct API',purpose:'General NASA APIs; APOD shown only as a connectivity example. Unrelated to lunar science.',
+ doc:'https://api.nasa.gov/',ep:'https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY',auth:'API key (DEMO_KEY is rate-limited; get your own)',resp:'{ "title": "...", "date": "...", "explanation": "...", "url": "..." }',lim:'Not lunar surface data. Never hardcode private keys in client code.',steps:['Register for a key at api.nasa.gov.','Send requests with api_key.','Keep your key server-side.'],test:'https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY'}
+];
+const val=v=>typeof v==='function'?v():v;
+function renderApiCards(){
+ const s=q('#apiSearch').value.toLowerCase(),c=q('#apiCat').value;
+ q('#apiCards').innerHTML=APIS.filter(a=>(!c||a.cat===c)&&(a.name+a.purpose+a.kind).toLowerCase().includes(s)).map(a=>
+ `<div class="col-md-6 col-lg-4"><button class="glass api" data-id="${a.id}"><b>${a.name}</b><div class="small-muted">${a.kind}</div><span class="tag ${a.cat==='core'?'t-modeled':'t-na'}">${a.cat==='core'?'Core':'Optional'}</span></div></button></div>`).join('')||'<p class="small-muted">No matches.</p>';
+}
+function showApi(id){
+ const a=APIS.find(x=>x.id===id),ep=val(a.ep),isUrl=/^https?:/.test(ep),code=isUrl?`fetch(${JSON.stringify(ep)})\n  .then(r => r.json())\n  .then(data => console.log(data))\n  .catch(err => console.error(err));`:'// Not an HTTP API — download files from the archive.';
+ q('#apiDetail').innerHTML=`<h3 class="h5">${a.name} <span class="tag ${a.cat==='core'?'t-modeled':'t-na'}">${a.cat==='core'?'Core':'Optional'}</span></h3><p>${a.purpose}</p>
+ <p class="mb-1"><b>Access type:</b> ${a.kind} · <b>Auth:</b> ${a.auth} · <a href="${a.doc}" target="_blank" rel="noopener">Documentation <i class="bi bi-box-arrow-up-right"></i></a></p>
+ <p class="mb-1"><b>Endpoint / access:</b></p><pre id="epTxt">${esc(ep)}</pre>
+ <button class="btn btn-cy btn-sm me-1" id="cpy"><i class="bi bi-clipboard"></i> Copy endpoint</button>${a.test?'<button class="btn btn-cy btn-sm" id="tst"><i class="bi bi-play-fill"></i> Test request</button>':'<span class="small-muted">No test button (archive/portal, not a simple API).</span>'}
+ <p class="mt-3 mb-1"><b>Example fetch():</b></p><pre>${esc(code)}</pre>
+ <p class="mb-1"><b>Example response shape:</b></p><pre>${esc(a.resp)}</pre>
+ <p class="mb-1"><b>Limitations:</b> ${a.lim}</p><p class="mb-1"><b>Steps:</b></p><ol>${a.steps.map(s=>`<li>${s}</li>`).join('')}</ol><pre id="tOut" class="d-none"></pre>`;
+ q('#cpy').onclick=()=>copy(ep,q('#cpy'));
+ if(a.test)q('#tst').onclick=async()=>{const o=q('#tOut');o.classList.remove('d-none');o.textContent='Loading…';const t0=performance.now();
+  try{const r=await fetch(val(a.test));const tx=await r.text();o.textContent=`HTTP ${r.status} in ${(performance.now()-t0).toFixed(0)} ms\n`+tx.slice(0,700)+(tx.length>700?'\n…(truncated)':'')}
+  catch(e){o.textContent='Request failed: '+e.message+'\nCause may be CORS, rate limit, or network. This is a real result, not simulated. Try a server-side proxy.'}};
+ q('#apiDetail').scrollIntoView({behavior:'smooth',block:'nearest'});
+ document.querySelectorAll('.api').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
+}
+async function copy(t,b){try{await navigator.clipboard.writeText(t)}catch(e){const x=document.createElement('textarea');x.value=t;document.body.appendChild(x);x.select();document.execCommand('copy');x.remove()}const o=b.innerHTML;b.textContent='Copied!';setTimeout(()=>b.innerHTML=o,1200)}
+// ---- game tools
+function renderGame(){
+ const l=cur,d=+q('#diff').value,m=.6+.2*d,mn=minMax(l)[1],pow=Math.round(100*dayFrac(l.lat,0)*Math.sin(mn*rad)),g=l.game;
+ q('#gName').textContent=l.name.toUpperCase();q('#diffV').textContent=['','Rookie','Easy','Standard','Hard','Extreme'][d]+` (drain ×${m.toFixed(1)})`;
+ const R=[['Thermal stress',Math.min(10,Math.round(Math.abs(l.lat)>80?8:5)),m,'fiction'],['Power availability (index 0–100)',pow,1/m,'modeled'],['Water-ice potential',g.ice,1,'fiction'],['Rover mobility',g.mob,1/m,'fiction'],['Radiation protection need',10-g.rad,m,'fiction'],['Communication',g.comm,1/m,'fiction'],['Habitat suitability',g.hab,1/m,'fiction']];
+ q('#gBody').innerHTML=R.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td><b>${Math.max(0,Math.min(r[0].startsWith('Power')?100:10,r[1]*r[2])).toFixed(1)}</b></td><td>${tg(r[3])}</td></tr>`).join('');
+}
+// ---- wiring
+function select(id){cur=LOCS.find(x=>x.id===id);q('#sunLoc').value=id;renderCards(q('#locSearch').value);renderDash();renderEnv();renderSun();renderGame()}
+q('#locCards').addEventListener('click',e=>{const b=e.target.closest('.loc');if(b)select(b.dataset.id)});
+q('#locSearch').oninput=e=>renderCards(e.target.value);
+q('#apiCards').addEventListener('click',e=>{const b=e.target.closest('.api');if(b)showApi(b.dataset.id)});
+q('#apiSearch').oninput=renderApiCards;q('#apiCat').onchange=renderApiCards;
+['sunLoc','dec','day'].forEach(i=>q('#'+i).oninput=()=>{if(i==='sunLoc'){select(q('#sunLoc').value)}else renderSun()});
+q('#diff').oninput=renderGame;
+q('#sunLoc').innerHTML=LOCS.map(l=>`<option value="${l.id}">${l.name}</option>`).join('');
+renderApiCards();select(cur.id);
+// ---- 3D background with fallback
+(function(){
+ const cv=q('#bg');
+ try{
+  if(!window.THREE)throw 0;
+  const r=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true}),sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(45,1,.1,100);cam.position.z=4;
+  const tc=document.createElement('canvas');tc.width=512;tc.height=256;const x=tc.getContext('2d');x.fillStyle='#8a8d96';x.fillRect(0,0,512,256);
+  for(let i=0;i<260;i++){const px=Math.random()*512,py=Math.random()*256,rr=2+Math.random()*16;x.fillStyle='rgba(40,42,55,'+(.15+Math.random()*.3)+')';x.beginPath();x.arc(px,py,rr,0,7);x.fill();x.strokeStyle='rgba(200,205,220,.25)';x.stroke()}
+  const moon=new THREE.Mesh(new THREE.SphereGeometry(1.2,48,48),new THREE.MeshStandardMaterial({map:new THREE.CanvasTexture(tc),roughness:1}));moon.position.set(2.2,.6,0);sc.add(moon);
+  const li=new THREE.DirectionalLight(0xffffff,1.3);li.position.set(-3,2,3);sc.add(li,new THREE.AmbientLight(0x6070aa,.35));
+  const p=[];for(let i=0;i<500;i++)p.push((Math.random()-.5)*40,(Math.random()-.5)*24,-Math.random()*20);
+  const gs=new THREE.BufferGeometry();gs.setAttribute('position',new THREE.Float32BufferAttribute(p,3));sc.add(new THREE.Points(gs,new THREE.PointsMaterial({size:.05,color:0xaaddff})));
+  const rs=()=>{r.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();moon.position.x=innerWidth<768?0:2.2};rs();addEventListener('resize',rs);
+  const still=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  (function a(){if(!still)moon.rotation.y+=.0015;r.render(sc,cam);requestAnimationFrame(a)})();
+ }catch(e){cv.style.background='radial-gradient(circle at 80% 30%,#3a3d4d 0,#14123a 18%,transparent 40%)'}
+})();
+</script>
+</body>
+</html>

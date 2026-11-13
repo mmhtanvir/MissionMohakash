@@ -45,7 +45,6 @@ namespace Mohakash
             var steel = Mat(new Color(0.62f, 0.65f, 0.7f), 0.55f, 0.6f);
             var dark = Mat(new Color(0.16f, 0.18f, 0.22f), 0.3f, 0.3f);
             var blue = Mat(new Color(0.35f, 0.7f, 1f), 0.3f, 0f, 0.8f);
-            var mirror = Mat(new Color(0.75f, 0.85f, 0.92f), 0.95f, 0.9f);
 
             // ── galley (galley room, east wall); built in the old room's coordinates and moved ──
             var g = interior.GetComponent<HabitatInterior>().Group("galley");
@@ -73,12 +72,8 @@ namespace Mohakash
 
             // ── wash corner (crew quarters, north wall by the arm end); built in the old room's coordinates and moved ──
             var w = interior.GetComponent<HabitatInterior>().Group("wash");
-            Prim(w, PrimitiveType.Cube, "Wash counter", new Vector3(-5.45f, 0.45f, 3.95f), new Vector3(0.7f, 0.9f, 1.0f), white, true);
-            Prim(w, PrimitiveType.Cube, "Wash top", new Vector3(-5.45f, 0.92f, 3.95f), new Vector3(0.74f, 0.04f, 1.04f), steel, false);
-            Prim(w, PrimitiveType.Cube, "Basin", new Vector3(-5.4f, 0.935f, 3.95f), new Vector3(0.46f, 0.02f, 0.56f), dark, false);
-            Prim(w, PrimitiveType.Cylinder, "Tap", new Vector3(-5.75f, 1.02f, 3.95f), new Vector3(0.04f, 0.1f, 0.04f), steel, false);
-            Prim(w, PrimitiveType.Cube, "Mirror", new Vector3(-5.96f, 1.65f, 3.95f), new Vector3(0.03f, 0.7f, 0.8f), mirror, false);
-            Prim(w, PrimitiveType.Cube, "Mirror light", new Vector3(-5.93f, 2.08f, 3.95f), new Vector3(0.03f, 0.04f, 0.8f), blue, false);
+            // the bathroom pod model (basin, shower, toilet) stands in the wash corner, open side to the room
+            MoonWorld.AddBoxCollider(MoonWorld.Spawn("Bathroom", w.TransformPoint(new Vector3(-5.3f, 0f, 3.95f)), w.rotation * Quaternion.Euler(0f, 90f, 0f), 2.2f, w, "Bathroom pod"));
             Station(w, "Wash basin", new Vector3(-4.6f, 0f, 3.7f), 1.2f, new Color(0.5f, 0.85f, 1f),
                 () =>
                 {
