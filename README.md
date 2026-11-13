@@ -210,6 +210,51 @@ The dust storm in Level 6 is grounded in real measurements:
 - **Per-panel cleaning:** the player must walk to each panel and press **E** individually, mirroring the real challenge Spirit and Opportunity faced (they relied on wind events; MissionMohakash makes it an active task).
 - **Dust colour:** the orange-brown overlay (`#B87539`) matches the iron-oxide dust hue documented in Mars surface spectroscopy.
 
+## Sources, datasets and libraries
+
+### Live NASA APIs
+
+| Source | Used for |
+|---|---|
+| **NASA DONKI** — Space Weather Database ([api.nasa.gov/DONKI](https://api.nasa.gov/DONKI/notifications)) | Fetches the last 30 days of real solar flares (FLR), CMEs, radiation storms (SEP), and geomagnetic storms (GST). Summarised into one sentence on the mission briefing screen. Code: `NasaData.SpaceWeather()` |
+| **Moon Trek WMTS** — LRO WAC Global Mosaic 303ppd v02 ([trek.nasa.gov/moon](https://trek.nasa.gov/moon/)) | Downloads 2 hemisphere tiles and stitches them into the real lunar map shown on Moon-level briefing screens. Code: `NasaData.TrekMap()` |
+| **Mars Trek WMTS** — Viking MDIM 2.1 Colour Mosaic 232m ([trek.nasa.gov/mars](https://trek.nasa.gov/mars/)) | Same pipeline — real Mars map on the Level 6 (Dust Storm) briefing screen. Code: `NasaData.TrekMap()` |
+
+### Scientific mission data & papers
+
+These are not live calls — they are real-world numbers and mission results the simulation values were derived from.
+
+| Reference | What it drives |
+|---|---|
+| **LRO instruments** (LOLA, LROC, Diviner, LEND) | Shackleton crater dimensions (21 km wide, 4.2 km deep), PSR temperatures (~40 K), rim illumination (86–92% annual), hydrogen/ice deposits. All shown in the Lunar Intelligence dashboard. |
+| **Apollo 17 / Taurus–Littrow ALSEP** (1972) | Seismometer placement rule: ≥80 m from base noise. Moonquake mechanic references Apollo passive seismic network data. |
+| **NASA EMU spacesuit specs** | `SuitO2Max = 8.5 h`, `SuitBattMax = 8.2 h`, `SuitCO2Max = 8.0 h` — modelled on the real EMU's ~8-hour EVA endurance. |
+| **Water electrolysis stoichiometry** (ISS / Sabatier process) | OGS rate: `0.10 kg O2/h` consuming `1.125 L water/kg O2`. |
+| **ISS CDRA CO₂ scrubber data** | Scrubber rate `0.06 kg CO₂/h`; crew metabolic output `0.042 kg CO₂/h`. |
+| **NASA MOXIE experiment** (Perseverance rover, 2021) | On Mars levels, the OGS produces O₂ from atmospheric CO₂ instead of water — explicitly modelled on MOXIE. |
+| **Mars Exploration Rover program** (Spirit & Opportunity) | Dust buildup rate (~3%/h in storm, ~2%/day calm) and the 2018 global dust storm that ended Opportunity. Drives the per-panel `PanelDust` mechanic. |
+| **MRO/CRISM observations** | Storm solar irradiance `Sun × 0.25` during a Martian dust storm (`MissionModel.SunAt()`). |
+| **Lunar synodic month** | `SynodicDayHours = 708.7` (29.53 Earth days). Drives sun position and shadow windows (`LunarClock.cs`). |
+| **Lunar south pole solar geometry** | `EarthAzimuth = 85°, EarthElevation = 7°` — Earth's real position from the south pole. Sun elevation adapted for playability. |
+| **Artemis III candidate landing sites** | Shackleton Crater Rim, Malapert Mountain, Connecting Ridge, de Gerlache Crater, Haworth Crater — real candidate zones with real coordinates, terrain, illumination, and comms data (`LunarIntelligenceUi.cs`). |
+| **LCROSS impact mission** (2009) | Haworth Crater volatile data (water ice, methane, ammonia confirmed). |
+| **NASA space radiation / NSRL data** | EVA dose rate `0.04 mSv/h`, SPE `6 mSv/h` outside, `0.01 mSv/h` inside habitat (`MissionModel.cs`). |
+| **Mars iron-oxide dust spectroscopy** | Dust overlay colour `#B87539` matches the iron-oxide hue of real Martian dust (`SolarPanelDust.cs`). |
+
+### Unity packages and libraries
+
+| Package | Version | Purpose |
+|---|---|---|
+| **Unity 6** (Universal 3D / URP) | 6000.6.5f1 | Engine, rendering, physics, terrain |
+| **Universal Render Pipeline** (`com.unity.render-pipelines.universal`) | 17.6.0 | URP shaders, post-processing, shadows |
+| **glTFast** (`com.unity.cloud.gltfast`) | 6.20.0 | Runtime loading of Tripo3D-generated `.glb` models without re-import |
+| **Input System** (`com.unity.inputsystem`) | 1.20.0 | Keyboard, mouse, gamepad, and virtual touch controls |
+| **UI Toolkit / uGUI** (`com.unity.ugui`) | 2.6.0 | All in-game UI panels and USS stylesheets |
+| **Test Framework** (`com.unity.test-framework`) | 1.8.0 | 12 NUnit EditMode simulation tests (`SimTests.cs`) |
+| **Timeline** (`com.unity.timeline`) | 6.6.0 | Intro cinematic and landing sequence |
+| **AI Navigation** (`com.unity.ai.navigation`) | 2.0.15 | NavMesh for astronaut walk-to-interaction pathfinding |
+| **UnityWebRequest** (built-in) | — | DONKI API calls and Moon/Mars Trek tile downloads |
+
 ## Design and AI tools
 
 - Design (Figma): https://www.figma.com/design/Ylv8cr01wxyFhV6LQoHukZ/practices?node-id=314-2
