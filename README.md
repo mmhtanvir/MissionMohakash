@@ -221,12 +221,3 @@ The dust storm in Level 6 is grounded in real measurements:
 | **Antigravity** | Core development — additional code generation and debugging support |
 | **ChatGPT** ([chatgpt.com](https://chatgpt.com/)) | Suggestions and ideas — game design brainstorming, level narrative, tutorial wording, and mechanics feedback |
 | **Tripo3D** ([tripo3d.ai](https://www.tripo3d.ai/)) | 3D model generation — all in-game assets generated from text prompts and loaded as GLB files |
-
-### Tripo3D — AI-generated 3D models
-
-All in-game 3D models (astronaut suit, habitat modules, rovers, solar arrays, equipment crates, rocks, and surface hardware) were generated using [Tripo3D](https://www.tripo3d.ai/). The workflow was:
-
-1. Write a short text prompt describing the object (e.g. *"NASA lunar habitat module, white cylindrical pressurised shell, airlock on one end, solar-panel mast, realistic sci-fi"*).
-2. Tripo3D generates a GLB/glTF mesh with UV-mapped textures.
-3. The downloaded `.glb` files are placed in `Assets/Resources/Models/` and loaded at runtime via the `com.unity.cloud.gltfast` package — no Unity re-import step needed.
-4. Materials are then overridden in code (`SurfaceKit.cs`) to apply procedural normal maps, hull-plating detail, and URP-compatible shaders so everything matches the game's visual style.
